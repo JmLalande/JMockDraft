@@ -21,27 +21,25 @@ let draftState = {
     isSerpentineOrder: false,
 };
 
-// --- Calculate Paths (Adjusting for Render's potential 'src' execution directory) ---
-// __dirname might be /opt/render/project/src on Render
-const projectRoot = path.join(__dirname, '..'); // Go up one level from where the script is run
-const publicDirPath = path.join(projectRoot, 'public'); // Look for 'public' in the calculated root
+// --- Calculate Paths (Assuming 'public' is alongside server.js within 'src') ---
+// __dirname will be /opt/render/project/src on Render
+const publicDirPath = path.join(__dirname, 'public'); // Look for 'public' in the SAME directory as server.js
 const indexHtmlPath = path.join(publicDirPath, 'index.html');
 
 // --- Optional Diagnostic Logs (Can be removed once confirmed working) ---
 console.log(`DEBUG: Current directory (__dirname): ${__dirname}`);
-console.log(`DEBUG: Calculated project root: ${projectRoot}`);
 console.log(`DEBUG: Calculated public directory path: ${publicDirPath}`);
 console.log(`DEBUG: Calculated index.html path: ${indexHtmlPath}`);
 
 try {
-    // Check contents relative to the calculated project root
-    const rootContents = fs.readdirSync(projectRoot);
-    console.log(`DEBUG: Contents of project root (${projectRoot}):`, rootContents);
+    // Check contents relative to __dirname (where server.js is)
+    const dirContents = fs.readdirSync(__dirname);
+    console.log(`DEBUG: Contents of __dirname (${__dirname}):`, dirContents); // Should show 'public' and 'server.js'
 
     if (fs.existsSync(publicDirPath)) {
         console.log(`DEBUG: public directory (${publicDirPath}) EXISTS.`);
         const publicDirContents = fs.readdirSync(publicDirPath);
-        console.log(`DEBUG: Contents of public directory (${publicDirPath}):`, publicDirContents);
+        console.log(`DEBUG: Contents of public directory (${publicDirPath}):`, publicDirContents); // Should show index.html etc.
         if (fs.existsSync(indexHtmlPath)) {
             console.log(`DEBUG: index.html (${indexHtmlPath}) EXISTS.`);
         } else {
@@ -113,9 +111,11 @@ function calculateNextTurn(currentState) {
 
 
 // --- Serve Static Files ---
+// Use the path relative to __dirname
 app.use(express.static(publicDirPath));
 
 // --- Handle Root Route ---
+// Use the path relative to __dirname
 app.get('/', (req, res) => {
   // Check if file exists before sending
   if (fs.existsSync(indexHtmlPath)) {
