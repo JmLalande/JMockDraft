@@ -20,6 +20,33 @@ let draftState = {
     isSerpentineOrder: false,
 };
 
+// <<<--- ADD DIAGNOSTIC LOGS --- >>>
+console.log(`DEBUG: Current directory (__dirname): ${__dirname}`);
+const publicDirPath = path.join(__dirname, 'public');
+const indexHtmlPath = path.join(publicDirPath, 'index.html');
+console.log(`DEBUG: Calculated public directory path: ${publicDirPath}`);
+console.log(`DEBUG: Calculated index.html path: ${indexHtmlPath}`);
+
+try {
+    const dirContents = fs.readdirSync(__dirname);
+    console.log(`DEBUG: Contents of __dirname (${__dirname}):`, dirContents);
+    if (fs.existsSync(publicDirPath)) {
+        console.log(`DEBUG: public directory (${publicDirPath}) EXISTS.`);
+        const publicDirContents = fs.readdirSync(publicDirPath);
+        console.log(`DEBUG: Contents of public directory (${publicDirPath}):`, publicDirContents);
+        if (fs.existsSync(indexHtmlPath)) {
+            console.log(`DEBUG: index.html (${indexHtmlPath}) EXISTS.`);
+        } else {
+            console.error(`DEBUG: index.html (${indexHtmlPath}) DOES NOT EXIST.`); // Log error if index.html is missing
+        }
+    } else {
+        console.error(`DEBUG: public directory (${publicDirPath}) DOES NOT EXIST.`); // Log error if public dir is missing
+    }
+} catch (err) {
+    console.error("DEBUG: Error checking directories/files:", err);
+}
+// <<<--- END DIAGNOSTIC LOGS --- >>>
+
 // --- Server-Side Turn Calculation Logic ---
 // Moved outside the 'connection' handler so it's defined only once
 function calculateNextTurn(currentState) {
