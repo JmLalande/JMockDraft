@@ -79,11 +79,11 @@ function calculateNextTurn(currentState) {
 
 
 // --- Serve Static Files ---
-app.use(express.static(path.join(__dirname, 'public')));
+app.use(express.static(path.join(__dirname, '..', 'public')));
 
 // --- Handle Root Route ---
 app.get('/', (req, res) => {
-  res.sendFile(path.join(__dirname, 'public', 'index.html'));
+  res.sendFile(path.join(__dirname, '..', 'public', 'index.html'));
 });
 
 // --- Socket.IO Connection Handling ---
