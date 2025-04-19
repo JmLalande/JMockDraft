@@ -3,6 +3,7 @@ const express = require('express');
 const http = require('http');
 const { Server } = require("socket.io"); // Import Server class from socket.io
 const path = require('path');
+const fs = require('fs'); // Ensure fs is required
 
 const app = express();
 const server = http.createServer(app); // Create HTTP server using Express app
@@ -20,16 +21,23 @@ let draftState = {
     isSerpentineOrder: false,
 };
 
-// <<<--- ADD DIAGNOSTIC LOGS --- >>>
-console.log(`DEBUG: Current directory (__dirname): ${__dirname}`);
-const publicDirPath = path.join(__dirname, 'public');
+// --- Calculate Paths (Adjusting for Render's potential 'src' execution directory) ---
+// __dirname might be /opt/render/project/src on Render
+const projectRoot = path.join(__dirname, '..'); // Go up one level from where the script is run
+const publicDirPath = path.join(projectRoot, 'public'); // Look for 'public' in the calculated root
 const indexHtmlPath = path.join(publicDirPath, 'index.html');
+
+// --- Optional Diagnostic Logs (Can be removed once confirmed working) ---
+console.log(`DEBUG: Current directory (__dirname): ${__dirname}`);
+console.log(`DEBUG: Calculated project root: ${projectRoot}`);
 console.log(`DEBUG: Calculated public directory path: ${publicDirPath}`);
 console.log(`DEBUG: Calculated index.html path: ${indexHtmlPath}`);
 
 try {
-    const dirContents = fs.readdirSync(__dirname);
-    console.log(`DEBUG: Contents of __dirname (${__dirname}):`, dirContents);
+    // Check contents relative to the calculated project root
+    const rootContents = fs.readdirSync(projectRoot);
+    console.log(`DEBUG: Contents of project root (${projectRoot}):`, rootContents);
+
     if (fs.existsSync(publicDirPath)) {
         console.log(`DEBUG: public directory (${publicDirPath}) EXISTS.`);
         const publicDirContents = fs.readdirSync(publicDirPath);
@@ -37,18 +45,18 @@ try {
         if (fs.existsSync(indexHtmlPath)) {
             console.log(`DEBUG: index.html (${indexHtmlPath}) EXISTS.`);
         } else {
-            console.error(`DEBUG: index.html (${indexHtmlPath}) DOES NOT EXIST.`); // Log error if index.html is missing
+            console.error(`DEBUG: index.html (${indexHtmlPath}) DOES NOT EXIST.`);
         }
     } else {
-        console.error(`DEBUG: public directory (${publicDirPath}) DOES NOT EXIST.`); // Log error if public dir is missing
+        console.error(`DEBUG: public directory (${publicDirPath}) DOES NOT EXIST.`);
     }
 } catch (err) {
     console.error("DEBUG: Error checking directories/files:", err);
 }
-// <<<--- END DIAGNOSTIC LOGS --- >>>
+// --- End Diagnostic Logs ---
+
 
 // --- Server-Side Turn Calculation Logic ---
-// Moved outside the 'connection' handler so it's defined only once
 function calculateNextTurn(currentState) {
     if (!currentState.settings || currentState.settings.numTables <= 0) {
         return { // Return default state if settings are invalid
@@ -65,12 +73,11 @@ function calculateNextTurn(currentState) {
     if (currentPicks.length > 0) {
         lastActiveTableIndex = currentPicks[currentPicks.length - 1].tableId;
     } else {
-        // Should not happen if called after the first pick, but handle defensively.
+        // If no picks made yet, the next pick is Table 0
         return { nextTableToPick: 0, currentPickDirection: 1 };
     }
 
     // Calculate total slots to check for draft completion
-    // Ensure playersPerPos exists and is an object before reducing
     const validPlayersPerPos = playersPerPos || {};
     const totalSlotsPerTable = Object.keys(validPlayersPerPos).reduce((sum, pos) => sum + (validPlayersPerPos[pos] || 0), 0);
     const totalSlots = numTables * totalSlotsPerTable;
@@ -106,11 +113,18 @@ function calculateNextTurn(currentState) {
 
 
 // --- Serve Static Files ---
-app.use(express.static(path.join(__dirname, '..', 'public')));
+app.use(express.static(publicDirPath));
 
 // --- Handle Root Route ---
 app.get('/', (req, res) => {
-    res.sendFile(path.join(__dirname, '..', 'public', 'index.html'));
+  // Check if file exists before sending
+  if (fs.existsSync(indexHtmlPath)) {
+      res.sendFile(indexHtmlPath);
+  } else {
+      console.error(`ERROR: Attempted to send index.html but it was not found at ${indexHtmlPath}`);
+      // Send a more informative error message if the file isn't found
+      res.status(404).send(`Error: index.html not found. Server expected it at: ${indexHtmlPath}`);
+  }
 });
 
 // --- Socket.IO Connection Handling ---
@@ -118,10 +132,9 @@ io.on('connection', (socket) => {
   console.log('A user connected:', socket.id);
 
   // Send the current draft state to the newly connected user
-  // Convert Set to Array before sending initial state
   const initialStateToSend = {
       ...draftState,
-      selectedPlayerIds: Array.from(draftState.selectedPlayerIds)
+      selectedPlayerIds: Array.from(draftState.selectedPlayerIds) // Convert Set to Array
   };
   socket.emit('draft_state_update', initialStateToSend);
 
@@ -130,7 +143,7 @@ io.on('connection', (socket) => {
   socket.on('start_draft', (settings) => {
     console.log('Draft started with settings:', settings);
     // Basic validation (expand as needed)
-    if (!settings || typeof settings.numTables !== 'number' || settings.numTables < 1) {
+    if (!settings || typeof settings.numTables !== 'number' || settings.numTables < 1 || !settings.playersPerPos) {
         socket.emit('error', { message: "Invalid draft settings provided." });
         return;
     }
@@ -144,7 +157,6 @@ io.on('connection', (socket) => {
     draftState.isSerpentineOrder = !!settings.isSerpentineOrder; // Ensure boolean
 
     // Broadcast the updated state to ALL connected clients
-    // Convert Set to Array for JSON serialization
     const stateToSend = {
         ...draftState,
         selectedPlayerIds: Array.from(draftState.selectedPlayerIds)
@@ -164,7 +176,7 @@ io.on('connection', (socket) => {
         errorMessage = "Draft has not started.";
     } else if (pickData.tableId !== draftState.nextTableToPick) {
         isValidPick = false;
-        errorMessage = `It's not Table ${pickData.tableId + 1}'s turn (Expected: ${draftState.nextTableToPick + 1}).`;
+        errorMessage = `It's not Table ${pickData.tableId + 1}'s turn (Expected: Table ${draftState.nextTableToPick + 1}).`;
     } else if (!pickData || typeof pickData.playerId !== 'number') {
          isValidPick = false;
          errorMessage = "Invalid player data received.";
@@ -172,25 +184,25 @@ io.on('connection', (socket) => {
         isValidPick = false;
         errorMessage = "Player already selected.";
     }
-    // TODO: Add more validation
+    // TODO: Add more validation (e.g., check if table has room for the position)
 
     // --- Process Pick if Valid ---
     if (isValidPick) {
-        // 1. Create a *new* picks array
+        // 1. Create a new picks array (immutable update)
         const newPicks = [...draftState.picks, pickData];
         // 2. Add player ID to the Set
-        draftState.selectedPlayerIds.add(pickData.playerId); // Modifying the Set directly is okay
+        draftState.selectedPlayerIds.add(pickData.playerId);
 
-        // 3. Create a temporary state object for calculation
+        // 3. Create a temporary state object reflecting the new pick for calculation
         const stateForCalc = {
-            ...draftState, // Copy existing state
-            picks: newPicks // Use the new picks array
+            ...draftState,
+            picks: newPicks
         };
 
-        // 4. Calculate the next turn based on the temporary state
+        // 4. Calculate the next turn based on the state *after* this pick
         const { nextTableToPick, currentPickDirection } = calculateNextTurn(stateForCalc);
 
-        // 5. Update the main draftState object
+        // 5. Update the main draftState object with the results
         draftState.picks = newPicks; // Assign the new picks array
         draftState.nextTableToPick = nextTableToPick;
         draftState.currentPickDirection = currentPickDirection;
@@ -201,19 +213,19 @@ io.on('connection', (socket) => {
         const stateToSend = {
             settings: draftState.settings,
             picks: draftState.picks,
-            selectedPlayerIds: Array.from(draftState.selectedPlayerIds), // Convert Set here
+            selectedPlayerIds: Array.from(draftState.selectedPlayerIds),
             nextTableToPick: draftState.nextTableToPick,
             currentPickDirection: draftState.currentPickDirection,
             isSerpentineOrder: draftState.isSerpentineOrder
         };
 
-        console.log("Broadcasting state:", JSON.stringify(stateToSend, null, 2));
+        console.log("Broadcasting state:", JSON.stringify(stateToSend, null, 2)); // Log state being sent
 
         // 7. Broadcast the explicitly constructed state
         io.emit('draft_state_update', stateToSend);
 
     } else {
-        // Send error back
+        // Send error back to the client who made the invalid pick
         console.log("Invalid pick attempted:", pickData, "Reason:", errorMessage);
         socket.emit('pick_error', { message: errorMessage || "Invalid pick." });
     }
@@ -223,15 +235,14 @@ io.on('connection', (socket) => {
      console.log(`Undo request received from ${socket.id}`);
      // Basic validation: Can only undo if there are picks
      if (draftState.picks.length > 0) {
-        const lastPick = draftState.picks.pop(); // Remove the last pick
+        const lastPick = draftState.picks.pop(); // Remove the last pick from the array
 
         if (lastPick) {
             draftState.selectedPlayerIds.delete(lastPick.playerId); // Remove player from selected set
             console.log(`Undid pick: Player ID ${lastPick.playerId}`);
 
-            // --- Recalculate the turn state to what it was BEFORE the undone pick ---
-            // This is simpler than storing previous state: just recalculate based on the new 'picks' array
-            const { nextTableToPick, currentPickDirection } = calculateNextTurn(draftState);
+            // --- Recalculate the turn state based on the now-shorter picks array ---
+            const { nextTableToPick, currentPickDirection } = calculateNextTurn(draftState); // Pass the modified draftState
             draftState.nextTableToPick = nextTableToPick;
             draftState.currentPickDirection = currentPickDirection;
             // --- End Recalculate turn state ---
@@ -246,20 +257,20 @@ io.on('connection', (socket) => {
             io.emit('draft_state_update', stateToSend);
 
         } else {
+             // This shouldn't happen if picks.length > 0, but handle defensively
              console.error("Undo failed: Popped pick was undefined.");
-             // Optionally emit an error back
              socket.emit('error', { message: "Undo failed unexpectedly." });
         }
      } else {
          console.log("Undo requested but no picks to undo.");
-         // Optionally emit an error back
-         socket.emit('error', { message: "No picks to undo." });
+         socket.emit('error', { message: "No picks to undo." }); // Inform client
      }
   });
 
   // Handle table name updates
   socket.on('update_table_name', ({ tableId, newName }) => {
       console.log(`Table name update request: Table ${tableId}, New Name: ${newName}`);
+      // Validate the request
       if (draftState.settings &&
           draftState.settings.tableNames &&
           typeof tableId === 'number' &&
@@ -268,13 +279,14 @@ io.on('connection', (socket) => {
       {
           draftState.settings.tableNames[tableId] = newName.trim(); // Update name in state
 
-          // Broadcast the change
+          // Broadcast the change to all clients
           const stateToSend = {
               ...draftState,
               selectedPlayerIds: Array.from(draftState.selectedPlayerIds)
           };
           io.emit('draft_state_update', stateToSend);
-          // socket.emit('table_name_updated', { tableId, newName }); // Optional confirmation to sender
+          // Optionally send confirmation back to sender:
+          // socket.emit('table_name_updated', { tableId, newName });
       } else {
           console.error("Invalid table name update request received.");
           socket.emit('error', { message: "Invalid table name update request." });
