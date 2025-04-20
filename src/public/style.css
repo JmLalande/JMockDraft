@@ -32,6 +32,34 @@
 }
 
 /* ==========================================================================
+   Refresh logic
+   ========================================================================== */
+
+body.is-rejoining #start-screen {
+    display: none !important;
+}
+
+#loading-indicator {
+    display: none;
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-color: #f0f0f0;
+    color: #333;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    font-size: 1.2em;
+    z-index: 9999;
+}
+body.is-rejoining #loading-indicator {
+    display: flex;
+}
+
+
+/* ==========================================================================
    General Styles & Typography
    ========================================================================== */
 body {

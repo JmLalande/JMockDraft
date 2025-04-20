@@ -48,10 +48,19 @@ document.addEventListener("DOMContentLoaded", () => {
     const exitConfirmOverlay = document.getElementById('exit-confirm-overlay');
     const confirmExitButton = document.getElementById('confirm-exit-button');
     const cancelExitButton = document.getElementById('cancel-exit-button');
+    const loadingIndicatorElement = document.getElementById('loading-indicator');
 
     // ==========================================================================
     // Socket Connection Handling & Initial Rejoin Logic
     // ==========================================================================
+
+    // --- Early check for potential rejoin to prevent start screen flash ---
+    const initialStoredRoomCode = sessionStorage.getItem('currentRoomCode');
+    if (initialStoredRoomCode) {
+        console.log("Potential rejoin detected on initial load. Applying 'is-rejoining' class.");
+        document.body.classList.add('is-rejoining');
+    }
+    // --------------------------------------------------------------------
 
     const storedRoomCode = sessionStorage.getItem('currentRoomCode');
     let attemptingRejoin = false; // Flag to know if we are trying to rejoin
@@ -183,6 +192,10 @@ document.addEventListener("DOMContentLoaded", () => {
             showStartScreen(); // Revert if state is invalid
             return;
         }
+
+        // --- Ensure rejoin state is cleared and loader hidden ---
+        document.body.classList.remove('is-rejoining');
+        if (loadingIndicatorElement) loadingIndicatorElement.style.display = 'none';
 
         // --- Update UI Visibility ---
         startContainerElement.style.display = 'none';
@@ -506,6 +519,11 @@ document.addEventListener("DOMContentLoaded", () => {
     function showStartScreen() {
         console.log("Showing start screen...");
 
+        // --- Ensure rejoin state is cleared ---
+        document.body.classList.remove('is-rejoining');
+        if (loadingIndicatorElement) loadingIndicatorElement.style.display = 'none';
+        // ------------------------------------
+
         sessionStorage.removeItem('currentRoomCode');
 
         // Reset state
@@ -564,6 +582,10 @@ document.addEventListener("DOMContentLoaded", () => {
         // If we failed during an auto-rejoin attempt...
         if (attemptingRejoin) {
             console.log("Rejoin attempt failed, clearing stored code.");
+            // --- Hide loader before showing start screen ---
+            document.body.classList.remove('is-rejoining');
+            if (loadingIndicatorElement) loadingIndicatorElement.style.display = 'none';
+            // ---------------------------------------------
             sessionStorage.removeItem('currentRoomCode'); // Clear the bad code
             attemptingRejoin = false; // Reset the flag
             showStartScreen(); // Show the normal start screen
@@ -1034,6 +1056,13 @@ document.addEventListener("DOMContentLoaded", () => {
         if (exitConfirmOverlay) {
             exitConfirmOverlay.classList.remove('visible'); // Hide the modal
         }
+
+        // Tell the server we are leaving *before* clearing local state
+        if (currentRoomCode && socket.connected) {
+            console.log(`Emitting leave_draft for room ${currentRoomCode}`);
+            socket.emit('leave_draft', { roomCode: currentRoomCode });
+        }
+
         // Perform the actual exit actions
         sessionStorage.removeItem('currentRoomCode');
         showStartScreen(); // Revert UI

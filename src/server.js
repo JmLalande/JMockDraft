@@ -302,28 +302,28 @@ io.on('connection', (socket) => {
         }
    });
 
-  socket.on('update_table_name', ({ roomCode, tableId, newName }) => {
-    console.log(`[${socket.id}] Table name update for room ${roomCode}: Table ${tableId} -> ${newName}`);
-    const roomState = draftRooms.get(roomCode);
+    socket.on('update_table_name', ({ roomCode, tableId, newName }) => {
+        console.log(`[${socket.id}] Table name update for room ${roomCode}: Table ${tableId} -> ${newName}`);
+        const roomState = draftRooms.get(roomCode);
 
-    // Validation
-    if (!roomState?.settings?.tableNames) return socket.emit('error', { message: "Draft room or settings not found." });
-    if (typeof tableId !== 'number' || tableId < 0 || tableId >= roomState.settings.numTables || typeof newName !== 'string') {
-        return socket.emit('error', { message: "Invalid table name update request." });
-    }
+        // Validation
+        if (!roomState?.settings?.tableNames) return socket.emit('error', { message: "Draft room or settings not found." });
+        if (typeof tableId !== 'number' || tableId < 0 || tableId >= roomState.settings.numTables || typeof newName !== 'string') {
+            return socket.emit('error', { message: "Invalid table name update request." });
+        }
 
-    // Process Update
-    const finalName = newName.trim() || `Table ${tableId + 1}`; // Use default if empty
-    roomState.settings.tableNames[tableId] = finalName;
+        // Process Update
+        const finalName = newName.trim() || `Table ${tableId + 1}`; // Use default if empty
+        roomState.settings.tableNames[tableId] = finalName;
 
-    // Prepare and broadcast update (only need to send settings part if optimized)
-    const stateToSend = {
-        ...roomState,
-        selectedPlayerIds: Array.from(roomState.selectedPlayerIds),
-        participants: Array.from(roomState.participants)
-    };
-    io.to(roomCode).emit('draft_state_update', { roomCode: roomCode, draftState: stateToSend });
-  });
+        // Prepare and broadcast update (only need to send settings part if optimized)
+        const stateToSend = {
+            ...roomState,
+            selectedPlayerIds: Array.from(roomState.selectedPlayerIds),
+            participants: Array.from(roomState.participants)
+        };
+        io.to(roomCode).emit('draft_state_update', { roomCode: roomCode, draftState: stateToSend });
+    });
 
     // --- Disconnection Handling ---
 
@@ -352,6 +352,57 @@ io.on('connection', (socket) => {
                 }
             }
         });
+    });
+
+    // --- Handles leaving the draft room ---
+    socket.on('leave_draft', ({ roomCode }) => {
+        const upperRoomCode = roomCode?.trim().toUpperCase();
+        console.log(`[${socket.id}] Request to leave room ${upperRoomCode}`);
+
+        if (!upperRoomCode) {
+            console.warn(`[${socket.id}] Invalid room code provided for leave_draft.`);
+            return;
+        }
+
+        const roomState = draftRooms.get(upperRoomCode);
+
+        if (roomState && roomState.participants.has(socket.id)) {
+            // 1. Remove from participants Set
+            roomState.participants.delete(socket.id);
+            console.log(`[${socket.id}] Removed from participants list for room ${upperRoomCode}.`);
+
+            // 2. Remove socket from the Socket.IO room (stops broadcasts to this socket for this room)
+            socket.leave(upperRoomCode);
+            console.log(`[${socket.id}] Left Socket.IO room ${upperRoomCode}.`);
+
+            // 3. Notify remaining participants
+            if (roomState.participants.size > 0) {
+                const participantUpdatePayload = {
+                    roomCode: upperRoomCode,
+                    participants: Array.from(roomState.participants)
+                };
+
+                io.to(upperRoomCode).emit('participant_update', participantUpdatePayload);
+                console.log(`[${socket.id}] Emitted participant_update to remaining users in room ${upperRoomCode}.`);
+            } else {
+                 // Cleanup if room is now empty (similar to disconnect logic)
+                 console.log(`Room ${upperRoomCode} is now empty after user left.`);
+
+                 setTimeout(() => {
+                    if (draftRooms.get(upperRoomCode)?.participants.size === 0) {
+                        draftRooms.delete(upperRoomCode);
+                        console.log(`Room ${upperRoomCode} is empty and has been removed after user left.`);
+                    }
+                 }, 86400000); // Remove after 24 hours of being empty
+            }
+
+        } else if (roomState) {
+            console.warn(`[${socket.id}] Tried to leave room ${upperRoomCode}, but was not listed as a participant.`);
+            // Still try to leave the Socket.IO room just in case state is inconsistent
+            socket.leave(upperRoomCode);
+        } else {
+            console.warn(`[${socket.id}] Tried to leave non-existent room ${upperRoomCode}.`);
+        }
     });
 });
 
