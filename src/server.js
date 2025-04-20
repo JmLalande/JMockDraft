@@ -182,19 +182,26 @@ io.on('connection', (socket) => {
             roomState.participants.add(socket.id); // Add participant
             console.log(`[${socket.id}] Successfully joined room ${upperRoomCode}`);
         
-            // Prepare the full state ONCE
+            // --- Step 1: Send the FULL state ONLY to the user who just joined ---
             const fullStateToSend = {
                 ...roomState, // Copy all properties from roomState
                 // Convert Sets to Arrays for sending
                 selectedPlayerIds: Array.from(roomState.selectedPlayerIds),
                 participants: Array.from(roomState.participants)
             };
-
+            // Use the existing 'draft_state_update' for the joining user
             socket.emit('draft_state_update', { roomCode: upperRoomCode, draftState: fullStateToSend });
+            console.log(`[${socket.id}] Emitted full state (draft_state_update) to joiner.`);
 
-            // Notify others in the room (optional)
-            const notificationData = { roomCode: upperRoomCode, draftState: { participants: Array.from(roomState.participants) } };
-            socket.to(upperRoomCode).emit('draft_state_update', { roomCode: upperRoomCode, draftState: fullStateToSend });
+
+            // --- Step 2: Send a MINIMAL update to OTHERS already in the room ---
+            const participantUpdatePayload = {
+                roomCode: upperRoomCode,
+                participants: Array.from(roomState.participants) // Send only the updated list
+            };
+            // Emit to others in the room EXCEPT the sender
+            socket.to(upperRoomCode).emit('participant_update', participantUpdatePayload);
+            console.log(`[${socket.id}] Emitted participant_update to others in room ${upperRoomCode}.`);
 
         } else {
             console.log(`[${socket.id}] Join failed: Room ${upperRoomCode} not found.`);
