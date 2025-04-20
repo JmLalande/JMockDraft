@@ -50,17 +50,36 @@ document.addEventListener("DOMContentLoaded", () => {
     const cancelExitButton = document.getElementById('cancel-exit-button');
 
     // ==========================================================================
-    // Check for existing room on load
+    // Socket Connection Handling & Initial Rejoin Logic
     // ==========================================================================
+
     const storedRoomCode = sessionStorage.getItem('currentRoomCode');
     let attemptingRejoin = false; // Flag to know if we are trying to rejoin
 
-    if (storedRoomCode) {
-        console.log(`Found stored room code: ${storedRoomCode}. Attempting to rejoin.`);
-        attemptingRejoin = true;
-        // Tell the server we want to join this room again
-        socket.emit('join_draft', { roomCode: storedRoomCode });
+    // --- Function to handle the rejoin attempt ---
+    function attemptRejoinOnLoad() {
+        // This is called after the socket connects
+        if (storedRoomCode && !currentRoomCode) { // Check currentRoomCode too, prevent re-emitting if already joined
+            console.log(`[attemptRejoinOnLoad] Socket connected. Found stored room code: ${storedRoomCode}. Attempting to rejoin.`);
+            attemptingRejoin = true;
+            socket.emit('join_draft', { roomCode: storedRoomCode });
+        } else if (!storedRoomCode) {
+            console.log("[attemptRejoinOnLoad] Socket connected. No stored room code found.");
+            // Ensure start screen is shown if not rejoining and not already in a room
+            if (!currentRoomCode) {
+                showStartScreen();
+            }
+        } else {
+            console.log("[attemptRejoinOnLoad] Socket connected. Already have a currentRoomCode or no stored code. No rejoin needed now.");
+            // If already in a room (e.g., from draft_started), do nothing here.
+        }
     }
+
+    socket.on('connect', () => {
+        console.log(`Socket connected: ${socket.id}`);
+        // Attempt rejoin ONLY after connection is confirmed
+        attemptRejoinOnLoad();
+    });
 
     // Basic check for essential elements
     if (!startContainerElement || !draftArea || !socket) {
@@ -541,36 +560,65 @@ document.addEventListener("DOMContentLoaded", () => {
         console.error("Join Error:", error.message);
         alert(`Failed to join draft: ${error.message}`);
         if(roomCodeInput) roomCodeInput.value = '';
-
+    
         // If we failed during an auto-rejoin attempt...
         if (attemptingRejoin) {
             console.log("Rejoin attempt failed, clearing stored code.");
             sessionStorage.removeItem('currentRoomCode'); // Clear the bad code
             attemptingRejoin = false; // Reset the flag
             showStartScreen(); // Show the normal start screen
+        } else {
+            // Handle join error during normal join attempt (not rejoin)
+            // Ensure start screen is visible if it wasn't already
+             if (startContainerElement.style.display !== 'flex') {
+                 showStartScreen();
+             }
         }
     });
 
     socket.on('draft_state_update', ({ roomCode, draftState }) => {
-        // --- Strict Check: Only process if this update is for the room the client is *currently* in ---
-        if (roomCode === currentRoomCode && currentRoomCode !== null) {
-            console.log(`Received state update for current room ${roomCode}`);
+        console.log(`[draft_state_update] Received for room ${roomCode}. Current client room: ${currentRoomCode}. Attempting Rejoin: ${attemptingRejoin}`);
 
-            if (!draftState) {
-                console.warn(`Received update for room ${roomCode} but draftState is missing. Ignoring.`);
-                return; // Ignore if state is missing
+        if (!draftState || !draftState.roomCode || roomCode !== draftState.roomCode) { // Basic validation + ensure consistency
+            console.warn(`Received invalid or inconsistent draft_state_update. Ignoring.`, { roomCode, draftState });
+            return;
+        }
+
+        // --- Check 1: Is this the state for joining OR rejoining? ---
+        // Handles the direct message from server after 'join_draft' (for both initial join and rejoin)
+        if ((currentRoomCode === null || attemptingRejoin) && draftState.roomCode === roomCode) {
+            console.log(`Processing state for joining/rejoining room ${draftState.roomCode}.`);
+            const wasRejoining = attemptingRejoin;
+            attemptingRejoin = false; // Successfully processed state, no longer attempting rejoin
+
+            currentRoomCode = draftState.roomCode;
+            // Only set sessionStorage if it wasn't a rejoin (it should already be there from before refresh)
+            // Update: Let's always set it just in case, doesn't hurt.
+            sessionStorage.setItem('currentRoomCode', currentRoomCode);
+
+
+            // Ensure selectedPlayerIds is a Set
+            if (draftState.selectedPlayerIds && Array.isArray(draftState.selectedPlayerIds)) {
+                draftState.selectedPlayerIds = new Set(draftState.selectedPlayerIds);
+            } else {
+                draftState.selectedPlayerIds = new Set(); // Initialize if missing
             }
 
-            // Assume this is a full state update (pick, undo, name change, rejoin confirmation, etc.)
-            // Replace the local state.
+            currentServerState = draftState; // Store the full state
+            renderUIFromServerState(currentServerState); // Render the draft UI
+
+        // --- Check 2: Is this an update for the room I'm already in (and not rejoining)? ---
+        } else if (roomCode === currentRoomCode && currentRoomCode !== null && !attemptingRejoin) {
+            console.log(`Received state update for current room ${roomCode}`);
+
+            // Assume this is a full state update (pick, undo, name change, etc.). Replace the local state.
 
             // Ensure selectedPlayerIds is handled correctly
             if (draftState.selectedPlayerIds && Array.isArray(draftState.selectedPlayerIds)) {
-                 draftState.selectedPlayerIds = new Set(draftState.selectedPlayerIds);
+                draftState.selectedPlayerIds = new Set(draftState.selectedPlayerIds);
             } else {
-                 // If missing in the update, try to keep existing, otherwise initialize
-                 console.warn(`draft_state_update for ${roomCode} missing selectedPlayerIds array. Initializing empty set.`);
-                 draftState.selectedPlayerIds = currentServerState?.selectedPlayerIds || new Set();
+                console.warn(`draft_state_update for ${roomCode} missing selectedPlayerIds array. Using existing or initializing empty set.`);
+                draftState.selectedPlayerIds = currentServerState?.selectedPlayerIds instanceof Set ? currentServerState.selectedPlayerIds : new Set();
             }
 
             // Update the entire state reference
@@ -578,14 +626,11 @@ document.addEventListener("DOMContentLoaded", () => {
 
             renderUIFromServerState(currentServerState); // Re-render the UI
 
+        // --- Check 3: Ignore irrelevant updates ---
         } else {
-             // --- Ignore updates if: ---
-             // 1. The update is for a different room (roomCode !== currentRoomCode)
-             // 2. The client is on the start screen (currentRoomCode is null)
-             console.log(`Ignoring state update for room ${roomCode} (Current room: ${currentRoomCode || 'Start Screen'}).`);
+            console.log(`Ignoring state update for room ${roomCode} (Current room: ${currentRoomCode || 'Start Screen'}, Attempting Rejoin: ${attemptingRejoin}).`);
         }
     });
-
     
     socket.on('participant_update', ({ roomCode, participants }) => {
         // Only process if this update is for the room I'm currently in
@@ -1047,10 +1092,13 @@ document.addEventListener("DOMContentLoaded", () => {
     // Initialization
     // ==========================================================================
     console.log("Draft application client initialized.");
-    
-    // Only show start screen immediately if NOT attempting to rejoin
-    if (!attemptingRejoin) {
-        showStartScreen(); // Show the start screen by default
+
+    // Check if the socket is already connected when the script runs (e.g., hot reload)
+    if (socket.connected) {
+        console.log("Socket already connected on init.");
+        attemptRejoinOnLoad(); // Try rejoining immediately if connected
+    } else {
+        console.log("Socket not connected yet. Waiting for 'connect' event to determine initial UI.");
     }
 
 }); // End DOMContentLoaded
