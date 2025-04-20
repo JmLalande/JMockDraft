@@ -1,0 +1,646 @@
+/* ==========================================================================
+   Base & Variables
+   ========================================================================== */
+:root {
+    --primary-color: #0d6efd;
+    --primary-hover-color: #0b5ed7;
+    --danger-color: #dc3545;
+    --danger-hover-color: #bb2d3b;
+    --light-gray: #f8f9fa;
+    --medium-gray: #dee2e6;
+    --dark-gray: #6c757d;
+    --border-color: #ced4da;
+    --text-color: #212529;
+    --text-muted-color: #555;
+    --white: #fff;
+    --black: #000;
+    --font-family-sans-serif: Arial, sans-serif;
+    --border-radius: 0.375rem; /* ~6px */
+    --border-radius-sm: 0.25rem; /* ~4px */
+    --spacing-sm: 0.5rem;  /* 8px */
+    --spacing-md: 1rem;    /* 16px */
+    --spacing-lg: 1.5rem;  /* 24px */
+
+    --pos-a-bg: #f4c7c3;
+    --pos-d-bg: #c3daf4;
+    --pos-g-bg: #d6eadf;
+
+    --waiting-bg: #fff3cd;
+    --waiting-text: #664d03;
+    --full-bg: #d1e7dd;
+    --full-text: #0f5132;
+}
+
+/* ==========================================================================
+   General Styles & Typography
+   ========================================================================== */
+body {
+    font-family: var(--font-family-sans-serif);
+    margin: var(--spacing-lg);
+    position: relative; /* Needed for absolute positioning context */
+    color: var(--text-color);
+    background-color: var(--white);
+}
+
+h1, h2 {
+    margin-bottom: var(--spacing-md);
+}
+
+h1 {
+    margin-top: 60px; /* Space below fixed settings button */
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    row-gap: var(--spacing-sm);
+    column-gap: var(--spacing-md);
+}
+
+/* Utility */
+.hidden {
+    display: none !important; /* Use important if needed to override other display styles */
+}
+
+/* ==========================================================================
+   Initial Start Screen Styles
+   ========================================================================== */
+.initial-start-container {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    min-height: 90vh;
+    padding: var(--spacing-lg);
+    text-align: center;
+}
+
+.initial-start-container h2 {
+    margin-bottom: var(--spacing-lg);
+}
+
+#start-settings-form,
+#join-settings-form {
+    width: 100%;
+    max-width: 450px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+}
+
+#start-settings {
+    background-color: var(--light-gray);
+    padding: var(--spacing-lg);
+    border-radius: var(--border-radius);
+    border: 1px solid var(--medium-gray);
+    margin-bottom: var(--spacing-lg);
+    width: 100%;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+}
+
+#start-settings .settings-input-group,
+#join-settings-form .settings-input-group {
+    margin-bottom: var(--spacing-md);
+    text-align: left;
+}
+
+#start-settings .settings-input-group label,
+#join-settings-form .settings-input-group label {
+    display: block;
+    margin-bottom: var(--spacing-sm);
+    font-weight: bold;
+    font-size: 0.95em;
+}
+
+#start-settings .settings-input-group input[type="number"],
+#start-settings .settings-input-group input[type="text"], /* Added text for consistency */
+#join-settings-form .settings-input-group input[type="text"] {
+    width: 100%; /* Make inputs fill their group */
+    padding: var(--spacing-sm);
+    border: 1px solid var(--border-color);
+    border-radius: var(--border-radius-sm);
+    box-sizing: border-box;
+    font-size: 1em;
+}
+
+#start-settings .settings-input-group input[type="number"] {
+     width: 80px; /* Override for number inputs if needed */
+}
+#start-settings #maxSalaryCap {
+    width: 150px;
+}
+
+
+#start-settings .settings-checkbox-group {
+    display: flex;
+    align-items: center;
+    text-align: left;
+    margin-top: var(--spacing-lg);
+}
+
+#start-settings .settings-checkbox-group input[type="checkbox"] {
+    margin: 0 var(--spacing-sm) 0 0;
+    width: auto;
+    transform: scale(1.1);
+    flex-shrink: 0; /* Prevent checkbox from shrinking */
+}
+
+#start-settings .settings-checkbox-group label {
+    margin-bottom: 0;
+    font-weight: normal;
+    cursor: pointer;
+}
+
+/* ==========================================================================
+   Main Draft Area Styles
+   ========================================================================== */
+.draft-header {
+    margin-bottom: var(--spacing-lg);
+    position: relative; /* Context for settings button */
+}
+
+.room-code-display {
+    display: none; /* Hidden by default, shown by JS */
+    margin-left: var(--spacing-md);
+    font-size: 0.8em;
+    background-color: #eee;
+    padding: 3px 8px;
+    border-radius: 4px;
+    font-weight: normal;
+    white-space: nowrap;
+}
+
+#turn-counter {
+    font-size: 0.75em;
+    font-weight: normal;
+    color: var(--text-muted-color);
+    background-color: #f0f0f0;
+    padding: 4px 10px;
+    border-radius: 12px;
+    white-space: nowrap;
+    flex-basis: 100%; /* Force wrap below H1 text */
+    margin-top: var(--spacing-sm);
+}
+
+#turn-counter.waiting {
+    background-color: var(--waiting-bg);
+    color: var(--waiting-text);
+}
+
+#turn-counter.full {
+    background-color: var(--full-bg);
+    color: var(--full-text);
+}
+
+.draft-controls {
+    display: flex;
+    justify-content: flex-start;
+    align-items: center;
+    margin-top: var(--spacing-md); /* Space below H1 */
+    width: 100%;
+    box-sizing: border-box;
+}
+
+.draft-controls button {
+    margin: 0 var(--spacing-sm);
+    padding: 6px 12px;
+    font-size: 1rem;
+    cursor: pointer;
+}
+
+.draft-controls button:first-child { margin-left: 0; }
+.draft-controls button:last-child { margin-right: 0; }
+
+.draft-controls button:disabled {
+    cursor: not-allowed;
+    opacity: 0.6;
+}
+
+.draft-controls button#undo-button {
+    padding: 5px;
+    line-height: 0; /* Align SVG better */
+}
+
+.draft-controls button#undo-button svg {
+    vertical-align: middle;
+    display: block;
+}
+
+#tables-container {
+    display: flex;
+    gap: var(--spacing-lg);
+    max-width: 1400px;
+    margin: 0 auto;
+    overflow-x: auto;
+    padding-bottom: var(--spacing-lg); /* Space for scrollbar */
+}
+
+.table-wrapper {
+    vertical-align: top;
+    box-sizing: border-box;
+    width: auto; /* Let content determine width */
+    min-width: 300px; /* Minimum width for readability */
+    flex-shrink: 0;
+}
+
+/* ==========================================================================
+   Draft Table Styles
+   ========================================================================== */
+table {
+    border-collapse: collapse;
+    margin-bottom: var(--spacing-lg);
+    text-align: center;
+    width: 100%; /* Make table fill its wrapper */
+    border: 2px solid var(--black); /* Add outer border */
+}
+
+th,
+td {
+    border: 1px solid var(--dark-gray); /* Lighter internal borders */
+    padding: var(--spacing-sm);
+    position: relative; /* Context for search results */
+    vertical-align: middle;
+}
+
+th {
+    background-color: var(--medium-gray);
+    color: var(--black);
+    font-weight: bold;
+}
+
+.table-header {
+    background-color: navy; /* Consider using a variable */
+    color: var(--white);
+    font-weight: bold;
+    font-size: 1.2em;
+}
+.table-header td {
+    border-color: navy; /* Match background */
+}
+
+table thead th:nth-child(2),
+table tbody td:nth-child(2) {
+    width: 55%;
+}
+
+table thead th:nth-child(3),
+table tbody td:nth-child(3) {
+    width: 35%;
+}
+
+table thead th:nth-child(1),
+table tbody td:nth-child(1):not(.vertical-text) { /* Exclude the vertical text cell */
+    width: 10%;
+}
+
+/* Position Background Colors */
+.A, .vertical-A { background-color: var(--pos-a-bg); }
+.D, .vertical-D { background-color: var(--pos-d-bg); }
+.G, .vertical-G { background-color: var(--pos-g-bg); }
+
+.vertical-text {
+    writing-mode: vertical-rl;
+    text-orientation: mixed; /* Better compatibility than upright */
+    white-space: nowrap;
+    padding: var(--spacing-sm) 0; /* Adjust padding */
+    font-weight: bold;
+}
+
+.total-row {
+    font-weight: bold;
+    background-color: var(--light-gray);
+}
+.total-row td {
+    border-top: 2px solid var(--black); /* Emphasize total row */
+}
+
+.total-salary-cell.is-over-cap { /* Style specifically when over cap using class */
+    color: var(--danger-color);
+    font-weight: bold;
+}
+
+.player-search-input {
+    width: 100%;
+    padding: 5px;
+    border: 1px solid var(--border-color);
+    border-radius: var(--border-radius-sm);
+    font-size: 1rem;
+    box-sizing: border-box;
+    background-color: var(--white); /* Explicit white background */
+    color: var(--text-color); /* Default text color */
+    outline: none;
+    outline-offset: 0;
+    transition: background-color 0.2s ease-in-out, border-color 0.2s ease-in-out, color 0.2s ease-in-out; /* Added color transition */
+}
+
+/* Style for disabled search inputs - Making them prettier! */
+.player-search-input:disabled {
+    background-color: #f0f0f0;
+    border-color: var(--medium-gray);
+    color: var(--dark-gray);
+    cursor: not-allowed;
+    opacity: 0.75;
+}
+
+.search-results-container {
+    position: absolute;
+    top: 100%; /* Position below the input cell */
+    left: 0;
+    width: 100%; /* Match width of the cell */
+    border: 1px solid #ccc;
+    background-color: #fff;
+    z-index: 10;
+    max-height: 200px;
+    overflow-y: auto;
+    box-shadow: 0 2px 5px rgba(0,0,0,0.15);
+    text-align: left; /* Align results text left */
+    display: none; /* Explicitly hide */
+}
+
+.player-option {
+    padding: 5px 8px;
+    cursor: pointer;
+    font-size: 0.9em;
+    white-space: normal; /* Allow player names to wrap */
+}
+
+.player-option:last-child {
+    border-bottom: none;
+}
+
+.player-option:hover {
+    background-color: #eee; /* Consider a variable */
+}
+
+.player-slot.clickable-slot {
+    cursor: pointer;
+}
+
+.player-slot.clickable-slot .player-search-input {
+    border: 1px solid #2a6aa8;
+    box-shadow: 0 0 0 1px #2a6aa8;
+    background-color: #fff;
+}
+
+.player-slot.filled-slot .player-search-input {
+    background-color: #f0f0f0; /* Grey out filled inputs */
+    border: 1px solid #28a745;
+    box-shadow: 0 0 0 1px #28a745;
+}
+
+/*
+.player-slot.empty-slot:not(.clickable-slot) .player-search-input {
+     border: 1px solid #ccc;
+}
+*/
+
+
+/* ==========================================================================
+   Settings Button (Top Right)
+   ========================================================================== */
+.settings-btn {
+    position: absolute; /* Position relative to .draft-header */
+    top: 0;
+    right: 0;
+    z-index: 100;
+    width: 32px;
+    height: 28px;
+    border: 1px solid var(--border-color);
+    border-radius: var(--border-radius-sm);
+    background: var(--light-gray);
+    padding: 0;
+    cursor: pointer;
+    box-sizing: border-box;
+    overflow: hidden;
+    font-size: 0; /* Hide text if any */
+    transition: background-color 0.2s ease-in-out, border-color 0.2s ease-in-out;
+}
+
+.settings-btn span,
+.settings-btn::before,
+.settings-btn::after {
+    content: '';
+    position: absolute;
+    left: 5px; /* Adjust for padding */
+    width: calc(100% - 10px); /* Adjust for padding */
+    height: 2px;
+    background-color: var(--dark-gray);
+    border-radius: 1px;
+    transition: background-color 0.2s ease-in-out;
+}
+
+/* Position the lines for hamburger icon */
+.settings-btn::before { top: 7px; }
+.settings-btn span { top: 50%; margin-top: -1px; display: block; }
+.settings-btn::after { bottom: 7px; }
+
+.settings-btn:hover { background-color: #eee; border-color: #aaa; }
+.settings-btn:hover span,
+.settings-btn:hover::before,
+.settings-btn:hover::after { background-color: var(--text-color); }
+
+/* ==========================================================================
+   Overlay Styles (Settings, Table Names)
+   ========================================================================== */
+.overlay {
+    display: none; /* Hidden by default */
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(0, 0, 0, 0.6); /* Slightly darker background */
+    z-index: 1000;
+    justify-content: center;
+    align-items: center;
+    padding: var(--spacing-md); /* Add padding for smaller screens */
+    box-sizing: border-box;
+}
+
+.overlay.visible { /* Class added by JS to show */
+    display: flex;
+}
+
+.overlay-content { /* Using overlay__content naming convention */
+    background-color: var(--white);
+    padding: var(--spacing-lg);
+    border-radius: var(--border-radius);
+    min-width: 300px;
+    max-width: 90%;
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+    text-align: center;
+}
+
+.overlay-content h2 {
+    margin-top: 0; /* Remove default top margin */
+    margin-bottom: var(--spacing-lg);
+}
+
+/* Input group styles within overlays */
+#settings-overlay .settings-input-group, /* Specificity if needed */
+#table-names-input-container .settings-input-group {
+    margin-bottom: var(--spacing-md);
+    text-align: left;
+}
+
+#settings-overlay .settings-input-group label,
+#table-names-input-container label {
+    display: block;
+    margin-bottom: var(--spacing-sm);
+    font-weight: bold;
+}
+
+#table-names-input-container input[type="text"] {
+    width: 100%;
+    padding: var(--spacing-sm);
+    border: 1px solid var(--border-color);
+    border-radius: var(--border-radius-sm);
+    box-sizing: border-box;
+    font-size: 1em;
+}
+
+#settings-overlay #exit-draft-button {
+    display: block; /* Make it block to center with margin auto */
+    margin: var(--spacing-lg) auto 0; /* Center horizontally */
+    width: fit-content; /* Size to content */
+}
+
+.overlay-buttons {
+    margin-top: var(--spacing-lg);
+    display: flex;
+    justify-content: center;
+    gap: var(--spacing-md);
+    flex-wrap: wrap; /* Allow buttons to wrap on small screens */
+}
+
+#exit-confirm-overlay .overlay-content {
+    text-align: center; /* Ensure text is centered */
+}
+
+#exit-confirm-overlay p {
+    margin-bottom: var(--spacing-lg); /* Add space above buttons */
+    color: var(--text-muted-color); /* Slightly muted text */
+}
+
+/* Style for info items within settings overlay */
+.settings-info-item {
+    background-color: #eee;
+    padding: var(--spacing-sm);
+    border-radius: var(--border-radius-sm);
+    margin-bottom: var(--spacing-lg);
+    font-size: 0.9em;
+    color: var(--text-muted-color);
+    text-align: center;
+    word-wrap: break-word;
+}
+
+/* Make the room code container use flexbox */
+.settings-room-code-flex {
+    display: flex;
+    align-items: center;
+    justify-content: space-between; /* Puts space between text and button */
+    gap: var(--spacing-sm); /* Adds a small gap */
+    padding-right: 5px; /* Adjust padding slightly for button */
+}
+
+/* Ensure the text span takes up available space */
+#settings-room-code-text {
+    flex-grow: 1;
+    text-align: left; /* Align text left within its space */
+}
+
+/* Style for the copy button */
+#copy-room-code-button {
+    padding: 4px 8px; /* Smaller padding */
+    font-size: 0.8em; /* Smaller font */
+    line-height: 1; /* Adjust line height for icon */
+    flex-shrink: 0; /* Prevent button from shrinking */
+    background-color: var(--medium-gray); /* Match other buttons */
+    border: 1px solid var(--dark-gray);
+}
+#copy-room-code-button:hover {
+     background-color: var(--dark-gray);
+     border-color: var(--black);
+     color: var(--white);
+}
+#copy-room-code-button svg {
+    vertical-align: middle; /* Align icon nicely */
+}
+
+/* Optional: Style for smaller buttons if btn-sm class is used */
+.btn-sm {
+    padding: 4px 8px;
+    font-size: 0.875em; /* Slightly smaller font */
+    border-radius: var(--border-radius-sm);
+}
+
+
+/* Hide the container if the text span inside is empty */
+#settings-room-code-container:has(#settings-room-code-text:empty) {
+    display: none;
+}
+
+/* ==========================================================================
+   Button Styles
+   ========================================================================== */
+.btn { /* Basic button reset/defaults */
+    cursor: pointer;
+    border: 1px solid transparent; /* Add border for consistency */
+    border-radius: var(--border-radius);
+    padding: var(--spacing-sm) var(--spacing-md);
+    font-size: 1em;
+    text-align: center;
+    transition: background-color 0.2s ease, border-color 0.2s ease, color 0.2s ease, opacity 0.2s ease;
+    background-color: var(--medium-gray); /* Default background */
+    color: var(--text-color);
+}
+.btn:hover {
+    background-color: #c8cfd6; /* Slightly darker gray */
+    border-color: #babbbc;
+}
+
+.btn-primary {
+    background-color: var(--primary-color);
+    border-color: var(--primary-color);
+    color: var(--white);
+}
+.btn-primary:hover {
+    background-color: var(--primary-hover-color);
+    border-color: var(--primary-hover-color);
+}
+
+.btn-danger {
+    background-color: var(--danger-color);
+    border-color: var(--danger-color);
+    color: var(--white);
+}
+.btn-danger:hover {
+    background-color: var(--danger-hover-color);
+    border-color: var(--danger-hover-color);
+}
+
+
+.btn:disabled { /* General disabled style */
+    cursor: not-allowed;
+    opacity: 0.65;
+}
+
+/* Specific button adjustments */
+#start-draft-button,
+#join-draft-button {
+    padding: 10px 20px; /* Slightly larger padding */
+    font-size: 1.1em;
+    margin-top: var(--spacing-sm);
+}
+
+/* ==========================================================================
+   Table Names Overlay Specific Styles
+   ========================================================================== */
+#table-names-overlay .overlay-content {
+    max-width: 500px;
+}
+
+#table-names-input-container {
+    margin-bottom: var(--spacing-lg);
+    max-height: 60vh; /* Limit height and allow scrolling */
+    overflow-y: auto;
+    padding-right: var(--spacing-sm); /* Space for scrollbar */
+}

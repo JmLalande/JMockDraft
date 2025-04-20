@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mock Draft</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+    <!-- ==========================================================================
+         Initial Start Screen
+         ========================================================================== -->
+    <section class="initial-start-container" id="start-screen">
+        <header>
+            <h2>Draft Settings</h2>
+        </header>
+
+        <!-- Using form for semantic grouping, prevent default submit in JS if needed -->
+        <form id="start-settings-form" onsubmit="return false;">
+            <div id="start-settings">
+                <div class="settings-input-group">
+                    <label for="tableCount">Number of Tables:</label>
+                    <input type="number" id="tableCount" value="2" min="1">
+                </div>
+                <div class="settings-input-group">
+                    <label for="numForwards">Number of Forwards (A):</label>
+                    <input type="number" id="numForwards" value="3" min="0">
+                </div>
+                <div class="settings-input-group">
+                    <label for="numDefenders">Number of Defenders (D):</label>
+                    <input type="number" id="numDefenders" value="3" min="0">
+                </div>
+                <div class="settings-input-group">
+                    <label for="numGoaltenders">Number of Goaltenders (G):</label>
+                    <input type="number" id="numGoaltenders" value="1" min="0">
+                </div>
+                <div class="settings-input-group">
+                    <label for="maxSalaryCap">Maximum Salary Cap:</label>
+                    <input type="number" id="maxSalaryCap" value="85000000" min="0">
+                </div>
+                <div class="settings-input-group settings-checkbox-group">
+                     <input type="checkbox" id="serpentineOrder" name="serpentineOrder">
+                     <label for="serpentineOrder">Use Serpentine (Snake) Draft Order</label>
+                </div>
+            </div>
+
+            <button id="start-draft-button" type="button" class="btn btn-primary">Start New Draft</button>
+        </form>
+
+        <hr style="width: 50%; margin: 20px 0;">
+
+        <form id="join-settings-form" onsubmit="return false;">
+             <div class="settings-input-group">
+                <label for="roomCodeInput">Join Existing Draft:</label>
+                <input type="text" id="roomCodeInput" placeholder="Enter Room Code">
+             </div>
+             <button id="join-draft-button" type="button" class="btn">Join Draft</button>
+        </form>
+
+    </section>
+    <!-- ==========================================================================
+         End Initial Start Screen
+         ========================================================================== -->
+
+    <!-- ==========================================================================
+         Main Draft Area (Initially Hidden)
+         ========================================================================== -->
+    <main id="draft-area" class="hidden">
+        <header class="draft-header">
+            <button id="settings-button" class="settings-btn" aria-label="Open Settings">
+                <span></span>
+            </button>
+            <h1>
+                Mock Draft
+                <span id="turn-counter"></span>
+            </h1>
+            <div class="draft-controls">
+                <button id="undo-button" aria-label="Undo Last Pick" disabled>
+                    <svg xmlns="http://www.w3.org/2000/svg" height="18px" viewBox="0 0 24 24" width="18px" fill="currentColor">
+                        <path d="M0 0h24v24H0V0z" fill="none"/>
+                        <path d="M12.5 8c-2.65 0-5.05.99-6.9 2.6L2 7v9h9l-3.62-3.62c1.39-1.16 3.16-1.88 5.12-1.88 3.54 0 6.55 2.31 7.6 5.5l2.37-.78C21.92 12.01 17.49 8 12.5 8z"/>
+                    </svg>
+                </button>
+                <!-- Add other controls like pause/resume if needed -->
+            </div>
+        </header>
+
+        <div id="tables-container">
+            <!-- Draft tables will be generated here by JavaScript -->
+        </div>
+    </main>
+    <!-- ==========================================================================
+         End Main Draft Area
+         ========================================================================== -->
+
+    <!-- ==========================================================================
+         Overlays
+         ========================================================================== -->
+
+    <!-- Settings Overlay -->
+    <div id="settings-overlay" class="overlay">
+         <div class="overlay-content">
+            <h2>Settings</h2>
+            <!-- Add any in-draft settings here if applicable -->
+            <div id="settings-room-code-container" class="settings-info-item settings-room-code-flex">
+                <span id="settings-room-code-text">
+                    <!-- Room code text will be inserted here by JS -->
+                </span>
+                <button id="copy-room-code-button" class="btn btn-sm" title="Copy Room Code">
+                    <!-- SVG Icon for Copy -->
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-clipboard" viewBox="0 0 16 16">
+                        <path d="M4 1.5H3a2 2 0 0 0-2 2V14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V3.5a2 2 0 0 0-2-2h-1v1h1a1 1 0 0 1 1 1V14a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V3.5a1 1 0 0 1 1-1h1v-1z"/>
+                        <path d="M9.5 1a.5.5 0 0 1 .5.5v1a.5.5 0 0 1-.5.5h-3a.5.5 0 0 1-.5-.5v-1a.5.5 0 0 1 .5-.5h3zm-3-1A1.5 1.5 0 0 0 5 1.5v1A1.5 1.5 0 0 0 6.5 4h3A1.5 1.5 0 0 0 11 2.5v-1A1.5 1.5 0 0 0 9.5 0h-3z"/>
+                    </svg>
+                </button>
+            </div>
+            <button id="exit-draft-button" class="btn btn-danger">Exit Draft</button> <!-- Added btn-danger for distinction -->
+            <div class="overlay-buttons">
+                <button id="close-settings-button" class="btn">Close</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Table Names Overlay -->
+    <div id="table-names-overlay" class="overlay">
+        <div class="overlay-content">
+            <h2>Enter Table Names</h2>
+            <form id="table-names-form" onsubmit="return false;">
+                <div id="table-names-input-container">
+                    <!-- Input fields will be generated here by JavaScript -->
+                </div>
+                <div class="overlay-buttons">
+                     <button id="confirm-table-names-button" type="button" class="btn btn-primary">Confirm Names</button>
+                     <button id="cancel-table-names-button" type="button" class="btn">Cancel</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Exit Confirmation Overlay -->
+    <div id="exit-confirm-overlay" class="overlay">
+        <div class="overlay-content">
+            <h2>Exit Draft?</h2>
+            <p>Are you sure you want to leave the current draft room?</p>
+            <div class="overlay-buttons">
+                <button id="cancel-exit-button" class="btn">Cancel</button>
+                <button id="confirm-exit-button" class="btn btn-danger">Yes, Exit</button>
+            </div>
+        </div>
+    </div>
+
+
+    <!-- ==========================================================================
+         End Overlays
+         ========================================================================== -->
+
+    <!-- Scripts -->
+    <script src="/socket.io/socket.io.js"></script>
+    <script type="module" src="script.js"></script>
+</body>
+</html>
