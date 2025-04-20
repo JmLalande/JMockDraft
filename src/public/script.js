@@ -168,8 +168,6 @@ document.addEventListener("DOMContentLoaded", () => {
         // --- Update UI Visibility ---
         startContainerElement.style.display = 'none';
         draftArea.classList.remove('hidden');
-        settingsOverlay.classList.remove('visible');
-        tableNamesOverlay.classList.remove('visible');
 
         // --- Update Header Elements ---
         updateTurnDisplayFromServerState(currentServerState);
@@ -178,7 +176,6 @@ document.addEventListener("DOMContentLoaded", () => {
         if (maxSalaryCapInput) { // Update the one in the initial settings too
              maxSalaryCapInput.value = currentServerState.settings.maxSalary;
         }
-        // If there's a separate max salary display in the settings overlay, update it here
 
         // --- Regenerate Draft Tables ---
         console.log("[Render] Calling generateTablesFromServerState...");
@@ -555,49 +552,40 @@ document.addEventListener("DOMContentLoaded", () => {
     });
 
     socket.on('draft_state_update', ({ roomCode, draftState }) => {
-        if (!draftState || !draftState.roomCode) { // Basic validation
-             console.warn(`Received invalid draft_state_update. Ignoring.`, { roomCode, draftState });
-             return;
-        }
-    
-        // --- Check 1: Is this the initial state for me joining? ---
-        if (currentRoomCode === null && draftState.roomCode === roomCode) {
-            console.log(`Joined room ${draftState.roomCode}, processing initial state via draft_state_update.`);
-            currentRoomCode = draftState.roomCode;
-            sessionStorage.setItem('currentRoomCode', currentRoomCode);
-    
-            // Ensure selectedPlayerIds is a Set
-            if (draftState.selectedPlayerIds && Array.isArray(draftState.selectedPlayerIds)) {
-                 draftState.selectedPlayerIds = new Set(draftState.selectedPlayerIds);
-            } else {
-                 draftState.selectedPlayerIds = new Set(); // Initialize if missing
-            }
-    
-            currentServerState = draftState; // Store the full initial state
-            renderUIFromServerState(currentServerState); // Render the draft UI
-    
-        // --- Check 2: Is this an update for the room I'm already in? ---
-        } else if (roomCode === currentRoomCode && currentRoomCode !== null) {
+        // --- Strict Check: Only process if this update is for the room the client is *currently* in ---
+        if (roomCode === currentRoomCode && currentRoomCode !== null) {
             console.log(`Received state update for current room ${roomCode}`);
-    
+
+            if (!draftState) {
+                console.warn(`Received update for room ${roomCode} but draftState is missing. Ignoring.`);
+                return; // Ignore if state is missing
+            }
+
+            // Assume this is a full state update (pick, undo, name change, rejoin confirmation, etc.)
+            // Replace the local state.
+
             // Ensure selectedPlayerIds is handled correctly
             if (draftState.selectedPlayerIds && Array.isArray(draftState.selectedPlayerIds)) {
                  draftState.selectedPlayerIds = new Set(draftState.selectedPlayerIds);
             } else {
                  // If missing in the update, try to keep existing, otherwise initialize
+                 console.warn(`draft_state_update for ${roomCode} missing selectedPlayerIds array. Initializing empty set.`);
                  draftState.selectedPlayerIds = currentServerState?.selectedPlayerIds || new Set();
             }
-    
-            // Update the entire state
+
+            // Update the entire state reference
             currentServerState = draftState;
-    
-            renderUIFromServerState(currentServerState); // Re-render
-    
-        // --- Check 3: Update for a different room or client is on start screen ---
+
+            renderUIFromServerState(currentServerState); // Re-render the UI
+
         } else {
+             // --- Ignore updates if: ---
+             // 1. The update is for a different room (roomCode !== currentRoomCode)
+             // 2. The client is on the start screen (currentRoomCode is null)
              console.log(`Ignoring state update for room ${roomCode} (Current room: ${currentRoomCode || 'Start Screen'}).`);
         }
     });
+
     
     socket.on('participant_update', ({ roomCode, participants }) => {
         // Only process if this update is for the room I'm currently in
