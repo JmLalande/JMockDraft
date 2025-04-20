@@ -177,22 +177,24 @@ io.on('connection', (socket) => {
 
         if (draftRooms.has(upperRoomCode)) {
             const roomState = draftRooms.get(upperRoomCode);
-
+        
             socket.join(upperRoomCode);
             roomState.participants.add(socket.id); // Add participant
             console.log(`[${socket.id}] Successfully joined room ${upperRoomCode}`);
-
-            // Send current state to the joining client
-            const stateToSend = {
-                ...roomState,
-                selectedPlayerIds: Array.from(roomState.selectedPlayerIds), // Send current selections
+        
+            // Prepare the full state ONCE
+            const fullStateToSend = {
+                ...roomState, // Copy all properties from roomState
+                // Convert Sets to Arrays for sending
+                selectedPlayerIds: Array.from(roomState.selectedPlayerIds),
                 participants: Array.from(roomState.participants)
             };
-            socket.emit('draft_state_update', { roomCode: upperRoomCode, draftState: stateToSend });
+
+            socket.emit('draft_state_update', { roomCode: upperRoomCode, draftState: fullStateToSend });
 
             // Notify others in the room (optional)
             const notificationData = { roomCode: upperRoomCode, draftState: { participants: Array.from(roomState.participants) } };
-            socket.to(upperRoomCode).emit('draft_state_update', notificationData); // Send only participant update to others
+            socket.to(upperRoomCode).emit('draft_state_update', { roomCode: upperRoomCode, draftState: fullStateToSend });
 
         } else {
             console.log(`[${socket.id}] Join failed: Room ${upperRoomCode} not found.`);
