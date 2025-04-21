@@ -55,7 +55,13 @@
         <form id="join-settings-form" onsubmit="return false;">
              <div class="settings-input-group">
                 <label for="roomCodeInput">Join an Existing Draft :</label>
-                <input type="text" id="roomCodeInput" placeholder="Enter Room Code">
+                <input
+                type="text"
+                id="roomCodeInput"
+                placeholder="Enter Room Code"
+                required
+                maxlength="5"
+                style="text-transform: uppercase;">            
              </div>
              <button id="join-draft-button" type="button" class="btn">Join Draft</button>
         </form>

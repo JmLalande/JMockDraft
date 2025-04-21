@@ -137,7 +137,7 @@ const indexHtmlPath = path.join(publicDirPath, 'index.html');
 // Serve static files (HTML, CSS, client-side JS)
 app.use(express.static(publicDirPath));
 
-// Serve the main index.html file for the root route
+/* Serve the main index.html file for the root route
 app.get('/', (req, res) => {
   if (fs.existsSync(indexHtmlPath)) {
       res.sendFile(indexHtmlPath);
@@ -146,7 +146,13 @@ app.get('/', (req, res) => {
       console.error(`FATAL ERROR: index.html not found at ${indexHtmlPath}`);
       res.status(500).send(`Server Configuration Error: Main application file not found.`);
   }
+});*/
+
+app.get('/', (req, res) => {
+    console.log('[/] Root route hit!'); // Add logging
+    res.status(200).send('Server is running!');
 });
+  
 
 // ==========================================================================
 // Socket.IO Connection Handling
