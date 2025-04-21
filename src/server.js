@@ -132,26 +132,10 @@ function scheduleEmptyRoomRemoval(roomCode, delay) {
 // ==========================================================================
 
 const publicDirPath = path.join(__dirname, 'public');
-const indexHtmlPath = path.join(publicDirPath, 'index.html');
+//const indexHtmlPath = path.join(publicDirPath, 'index.html');
 
 // Serve static files (HTML, CSS, client-side JS)
 app.use(express.static(publicDirPath));
-
-/* Serve the main index.html file for the root route
-app.get('/', (req, res) => {
-  if (fs.existsSync(indexHtmlPath)) {
-      res.sendFile(indexHtmlPath);
-  } else {
-      // This is a critical error if the main file is missing
-      console.error(`FATAL ERROR: index.html not found at ${indexHtmlPath}`);
-      res.status(500).send(`Server Configuration Error: Main application file not found.`);
-  }
-});*/
-
-app.get('/', (req, res) => {
-    console.log('[/] Root route hit!'); // Add logging
-    res.status(200).send('Server is running!');
-});
   
 
 // ==========================================================================
