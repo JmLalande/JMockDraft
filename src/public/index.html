@@ -8,7 +8,7 @@
 </head>
 <body>
 
-    <div id="loading-indicator">Rejoining draft...</div>
+    <div id="loading-indicator">Rejoining Draft...</div>
 
     <!-- ==========================================================================
          Initial Start Screen
@@ -22,28 +22,28 @@
         <form id="start-settings-form" onsubmit="return false;">
             <div id="start-settings">
                 <div class="settings-input-group">
-                    <label for="tableCount">Number of Tables:</label>
+                    <label for="tableCount">Number of Teams :</label>
                     <input type="number" id="tableCount" value="2" min="1">
                 </div>
                 <div class="settings-input-group">
-                    <label for="numForwards">Number of Forwards (A):</label>
-                    <input type="number" id="numForwards" value="3" min="0">
+                    <label for="numForwards">Forwards per Team :</label>
+                    <input type="number" id="numForwards" value="12" min="0">
                 </div>
                 <div class="settings-input-group">
-                    <label for="numDefenders">Number of Defenders (D):</label>
-                    <input type="number" id="numDefenders" value="3" min="0">
+                    <label for="numDefenders">Defenders per Team :</label>
+                    <input type="number" id="numDefenders" value="6" min="0">
                 </div>
                 <div class="settings-input-group">
-                    <label for="numGoaltenders">Number of Goaltenders (G):</label>
-                    <input type="number" id="numGoaltenders" value="1" min="0">
+                    <label for="numGoaltenders">Goaltenders per Team :</label>
+                    <input type="number" id="numGoaltenders" value="2" min="0">
                 </div>
                 <div class="settings-input-group">
-                    <label for="maxSalaryCap">Maximum Salary Cap:</label>
-                    <input type="number" id="maxSalaryCap" value="85000000" min="0">
+                    <label for="maxSalaryCap">Team Salary Cap:</label>
+                    <input type="number" id="maxSalaryCap" value="95500000" min="0">
                 </div>
                 <div class="settings-input-group settings-checkbox-group">
-                     <input type="checkbox" id="serpentineOrder" name="serpentineOrder">
-                     <label for="serpentineOrder">Use Serpentine (Snake) Draft Order</label>
+                     <input type="checkbox" id="serpentineOrder" name="serpentineOrder" checked>
+                     <label for="serpentineOrder">Use Serpentine Draft Order</label>
                 </div>
             </div>
 
@@ -54,7 +54,7 @@
 
         <form id="join-settings-form" onsubmit="return false;">
              <div class="settings-input-group">
-                <label for="roomCodeInput">Join Existing Draft:</label>
+                <label for="roomCodeInput">Join an Existing Draft :</label>
                 <input type="text" id="roomCodeInput" placeholder="Enter Room Code">
              </div>
              <button id="join-draft-button" type="button" class="btn">Join Draft</button>
@@ -127,7 +127,7 @@
     <!-- Table Names Overlay -->
     <div id="table-names-overlay" class="overlay">
         <div class="overlay-content">
-            <h2>Enter Table Names</h2>
+            <h2>Enter Team Names</h2>
             <form id="table-names-form" onsubmit="return false;">
                 <div id="table-names-input-container">
                     <!-- Input fields will be generated here by JavaScript -->
@@ -152,6 +152,9 @@
         </div>
     </div>
 
+    <div id="player-tooltip" class="player-tooltip" style="display: none; position: absolute; z-index: 100;">
+        <!-- Content will be added by JavaScript -->
+    </div>
 
     <!-- ==========================================================================
          End Overlays

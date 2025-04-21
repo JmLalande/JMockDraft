@@ -1,5 +1,5 @@
 // script.js
-import { playersIndex as playersIndexData, searchPlayers } from "./PlayerIndex_2024-25.mjs";
+import { playersIndex as playersIndexData, searchPlayers, getTeamLogoPath } from "./PlayerIndex_2024-25.mjs";
 
 document.addEventListener("DOMContentLoaded", () => {
 
@@ -7,105 +7,98 @@ document.addEventListener("DOMContentLoaded", () => {
     // State Variables
     // ==========================================================================
     let tempDraftSettings = {};
-    let currentServerState = null; // Holds the state for the current room
-    let currentRoomCode = null;
-    const playersIndex = playersIndexData; // Local copy of all players
-
+    let currentServerState = null; // Holds the full state received from the server for the current room
+    let currentRoomCode = null;    // The code of the room the client is currently in
+    let attemptingRejoin = false;  // Flag to manage the rejoin process on page load/refresh
+    const playersIndex = playersIndexData; // Local copy of all player data
 
     // ==========================================================================
     // Socket.IO Connection
     // ==========================================================================
-    const socket = io(); // Connect to the Socket.IO server
+    const socket = io(); // Initialize Socket.IO connection
 
     // ==========================================================================
-    // DOM Element Getters
+    // DOM Element References
     // ==========================================================================
+    // --- Screens & Containers ---
     const startContainerElement = document.getElementById('start-screen');
-    const startDraftButton = document.getElementById("start-draft-button");
     const draftArea = document.getElementById("draft-area");
+    const tablesContainer = document.getElementById("tables-container");
+    const loadingIndicatorElement = document.getElementById('loading-indicator');
+    // --- Buttons ---
+    const startDraftButton = document.getElementById("start-draft-button");
+    const joinDraftButton = document.getElementById("join-draft-button");
     const settingsButton = document.getElementById("settings-button");
-    const settingsOverlay = document.getElementById("settings-overlay");
     const closeSettingsButton = document.getElementById("close-settings-button");
     const exitDraftButton = document.getElementById("exit-draft-button");
     const undoButton = document.getElementById("undo-button");
-    const turnCounterElement = document.getElementById("turn-counter");
-    const tablesContainer = document.getElementById("tables-container");
-    const tableNamesOverlay = document.getElementById("table-names-overlay");
-    const tableNamesInputContainer = document.getElementById("table-names-input-container");
     const confirmTableNamesButton = document.getElementById("confirm-table-names-button");
+    const cancelTableNamesButton = document.getElementById("cancel-table-names-button");
+    const copyRoomCodeButton = document.getElementById('copy-room-code-button');
+    const confirmExitButton = document.getElementById('confirm-exit-button');
+    const cancelExitButton = document.getElementById('cancel-exit-button');
+    // --- Inputs & Displays ---
     const tableCountInput = document.getElementById("tableCount");
     const numForwardsInput = document.getElementById("numForwards");
     const numDefendersInput = document.getElementById("numDefenders");
     const numGoaltendersInput = document.getElementById("numGoaltenders");
     const serpentineOrderCheckbox = document.getElementById("serpentineOrder");
     const maxSalaryCapInput = document.getElementById("maxSalaryCap");
-    const cancelTableNamesButton = document.getElementById("cancel-table-names-button");
     const roomCodeInput = document.getElementById("roomCodeInput");
-    const joinDraftButton = document.getElementById("join-draft-button");
+    const turnCounterElement = document.getElementById("turn-counter");
     const settingsRoomCodeContainer = document.getElementById('settings-room-code-container');
     const settingsRoomCodeText = document.getElementById('settings-room-code-text');
-    const copyRoomCodeButton = document.getElementById('copy-room-code-button');
+    const tooltipElement = document.getElementById('player-tooltip');
+    // --- Overlays ---
+    const settingsOverlay = document.getElementById("settings-overlay");
+    const tableNamesOverlay = document.getElementById("table-names-overlay");
+    const tableNamesInputContainer = document.getElementById("table-names-input-container");
     const exitConfirmOverlay = document.getElementById('exit-confirm-overlay');
-    const confirmExitButton = document.getElementById('confirm-exit-button');
-    const cancelExitButton = document.getElementById('cancel-exit-button');
-    const loadingIndicatorElement = document.getElementById('loading-indicator');
 
     // ==========================================================================
-    // Socket Connection Handling & Initial Rejoin Logic
+    // Initial Setup & Rejoin Logic
     // ==========================================================================
 
-    // --- Early check for potential rejoin to prevent start screen flash ---
+    // --- Check session storage for potential rejoin ---
     const initialStoredRoomCode = sessionStorage.getItem('currentRoomCode');
-    if (initialStoredRoomCode) {
-        console.log("Potential rejoin detected on initial load. Applying 'is-rejoining' class.");
+    const wasViewingDraft = sessionStorage.getItem('viewingDraft') === 'true';
+
+    if (initialStoredRoomCode && wasViewingDraft) {
         document.body.classList.add('is-rejoining');
+    } else {
+        // Ensure loader is hidden if not rejoining
+        if (loadingIndicatorElement) loadingIndicatorElement.style.display = 'none';
     }
-    // --------------------------------------------------------------------
 
-    const storedRoomCode = sessionStorage.getItem('currentRoomCode');
-    let attemptingRejoin = false; // Flag to know if we are trying to rejoin
-
-    // --- Function to handle the rejoin attempt ---
+    /** Attempts to rejoin a draft room if a code is found in session storage. */
     function attemptRejoinOnLoad() {
-        // This is called after the socket connects
-        if (storedRoomCode && !currentRoomCode) { // Check currentRoomCode too, prevent re-emitting if already joined
-            console.log(`[attemptRejoinOnLoad] Socket connected. Found stored room code: ${storedRoomCode}. Attempting to rejoin.`);
+        const storedCode = sessionStorage.getItem('currentRoomCode'); // Re-check in case it was cleared
+        if (storedCode && !currentRoomCode) { // Prevent re-emitting if already joined
             attemptingRejoin = true;
-            socket.emit('join_draft', { roomCode: storedRoomCode });
-        } else if (!storedRoomCode) {
-            console.log("[attemptRejoinOnLoad] Socket connected. No stored room code found.");
-            // Ensure start screen is shown if not rejoining and not already in a room
-            if (!currentRoomCode) {
-                showStartScreen();
-            }
+            socket.emit('join_draft', { roomCode: storedCode });
+        } else if (!storedCode && !currentRoomCode) {
+            showStartScreen();
         } else {
-            console.log("[attemptRejoinOnLoad] Socket connected. Already have a currentRoomCode or no stored code. No rejoin needed now.");
-            // If already in a room (e.g., from draft_started), do nothing here.
         }
     }
-
-    socket.on('connect', () => {
-        console.log(`Socket connected: ${socket.id}`);
-        // Attempt rejoin ONLY after connection is confirmed
-        attemptRejoinOnLoad();
-    });
 
     // Basic check for essential elements
     if (!startContainerElement || !draftArea || !socket) {
         console.error("Essential UI elements or Socket.IO not found. Application cannot start.");
-        alert("Error initializing the application. Please refresh.");
-        return;
+        // Display a user-friendly message on the page itself
+        document.body.innerHTML = '<p style="color: red; padding: 20px;">Error initializing the application. Please refresh the page.</p>'; // Corrected HTML
+        return; // Stop script execution
     }
 
     // ==========================================================================
     // Helper Functions
     // ==========================================================================
 
-    /** Formats a number as USD currency without cents */
+    /** Formats a number as USD currency without cents. */
     function formatCurrency(value) {
-        const number = parseInt(value);
+        const number = parseInt(value, 10); // Always specify radix
         if (isNaN(number)) {
-            return '$0';
+            return '$0'; // Consistent default
         }
         return number.toLocaleString('en-US', {
             style: 'currency',
@@ -115,30 +108,30 @@ document.addEventListener("DOMContentLoaded", () => {
         });
     }
 
-    /** Calculates total player slots per table */
+    /** Calculates total player slots per table based on settings. */
     function getTotalSlotsPerTable(state) {
-        if (!state?.settings?.playersPerPos) return 0;
-        const playersPerPos = state.settings.playersPerPos || {};
-        // Use Object.values for slightly cleaner sum
+        const playersPerPos = state?.settings?.playersPerPos;
+        if (!playersPerPos) return 0;
         return Object.values(playersPerPos).reduce((sum, count) => sum + (count || 0), 0);
     }
 
-    /** Calculates the current draft round */
+    /** Calculates the current draft round number. */
     function getCurrentRound(state) {
-        if (!state?.settings?.numTables || state.settings.numTables <= 0) return 1;
+        const numTables = state?.settings?.numTables;
+        if (!numTables || numTables <= 0) return 1;
         const totalSlotsPerTable = getTotalSlotsPerTable(state);
         if (totalSlotsPerTable === 0) return 1;
         const picksMade = state.picks?.length || 0;
-        return Math.floor(picksMade / state.settings.numTables) + 1;
+        return Math.floor(picksMade / numTables) + 1;
     }
 
-    /** Filters local playersIndex for available players by position */
+    /** Filters local playersIndex for available players by position, excluding selected ones. */
     function getAvailablePlayers(position, serverSelectedPlayerIds) {
         if (!Array.isArray(playersIndex)) {
             console.error("playersIndex is not loaded or not an array.");
             return [];
         }
-        // Ensure serverSelectedPlayerIds is a Set
+        // Ensure serverSelectedPlayerIds is a Set for efficient lookup
         const selectedIds = serverSelectedPlayerIds instanceof Set
             ? serverSelectedPlayerIds
             : new Set(serverSelectedPlayerIds || []);
@@ -148,96 +141,190 @@ document.addEventListener("DOMContentLoaded", () => {
         );
     }
 
-    /** Maps server picks to a structure { tableId: { slotIndex: pickData } } */
+    /** Maps server picks array to a nested object structure: { teamId: { slotIndex: pickData } }. */
     function mapPicksToSlots(picks, settings) {
         const mappedPicks = {};
-        if (!picks || !settings?.numTables || !settings?.playersPerPos) return mappedPicks;
+        if (!picks || !settings?.numTables || !settings?.playersPerPos) {
+            console.error("[mapPicksToSlots] Invalid input provided.", { picks, settings });
+            return mappedPicks;
+        }
 
-        // Pre-initialize map structure
+        // Pre-initialize map structure for all tables
         for (let i = 0; i < settings.numTables; i++) {
             mappedPicks[i] = {};
         }
 
-        // Group picks by tableId first
+        // Group picks by teamId first for easier processing
         const picksByTable = picks.reduce((acc, pick) => {
-            if (!acc[pick.tableId]) {
-                acc[pick.tableId] = [];
+            if (pick.teamId !== undefined && pick.teamId !== null) {
+                if (!acc[pick.teamId]) {
+                    acc[pick.teamId] = [];
+                }
+                acc[pick.teamId].push(pick);
+            } else {
+                console.warn("[mapPicksToSlots] Pick found with invalid teamId:", pick);
             }
-            acc[pick.tableId].push(pick);
             return acc;
         }, {});
 
         // Assign picks to slots based on their order within each table's pick list
-        for (let tableId = 0; tableId < settings.numTables; tableId++) {
-            const tablePicks = picksByTable[tableId] || [];
+        // This assumes the server sends picks in the order they were made for each team.
+        for (let teamId = 0; teamId < settings.numTables; teamId++) {
+            const tablePicks = picksByTable[teamId] || [];
             tablePicks.forEach((pick, index) => {
-                // Assuming the order in the picks array corresponds to the slot order
-                mappedPicks[tableId][index] = pick;
+                mappedPicks[teamId][index] = pick; // Assign pick to its slot index
             });
         }
         return mappedPicks;
     }
 
     // ==========================================================================
-    // UI Rendering Functions
+    // Tooltip Functions
     // ==========================================================================
 
-    /** Renders the entire UI based on the state for the current room */
-    function renderUIFromServerState(roomState) {
-        console.log(`Rendering UI for room ${currentRoomCode}:`, roomState);
-        // currentServerState is set in the 'draft_state_update' listener
+    /** Displays player details tooltip on hover. */
+    function showPlayerTooltip(event) {
+        if (!tooltipElement) return;
 
-        if (!currentServerState || !currentServerState.settings) {
-            console.warn("[Render] Invalid state, showing start screen.");
-            showStartScreen(); // Revert if state is invalid
+        const targetElement = event.currentTarget; // The div.search-result-item
+        const playerId = parseInt(targetElement.dataset.playerId, 10);
+        if (isNaN(playerId)) return;
+
+        // Find related elements
+        const inputElement = targetElement.closest('.player-name-cell')?.querySelector('.player-search-input');
+        const searchResultsContainer = inputElement?.nextElementSibling;
+        const player = playersIndex.find(p => p.id === playerId);
+
+        if (!player || !searchResultsContainer) {
+            hidePlayerTooltip(); // Hide if data or container is missing
             return;
         }
 
-        // --- Ensure rejoin state is cleared and loader hidden ---
+        // Build tooltip content
+        const capHitFormatted = formatCurrency(player.cap_hit);
+        const playerAge = player.age ?? 'N/A';
+        const playerPosition = player.position;
+
+        let statsHtml = '';
+        if (playerPosition === 'G') {
+            statsHtml = `
+                <br><br><strong>Stats (2024-25)</strong><br>
+                GP: ${player.st_gp ?? 0}<br>
+                W-L: ${player.st_w ?? 0}-${player.st_l ?? 0}<br>
+                Sv%: ${typeof player.st_svp === 'number' ? player.st_svp.toFixed(3) : 'N/A'}<br>
+                GAA: ${typeof player.st_gaa === 'number' ? player.st_gaa.toFixed(2) : 'N/A'}<br>
+                SO: ${player.st_so ?? 0}
+            `;
+        } else { // Skater
+            statsHtml = `
+                <br><br><strong>Stats (2024-25)</strong><br>
+                GP: ${player.st_gp ?? 0}<br>
+                G: ${player.st_g ?? 0}<br>
+                A: ${player.st_a ?? 0}<br>
+                P: ${player.st_p ?? 0}<br>
+            `;
+        }
+
+        tooltipElement.innerHTML = `
+            <strong>${player.name}</strong><br>
+            Age: ${playerAge}<br>
+            Cap Hit: ${capHitFormatted}
+            ${statsHtml}
+        `;
+
+        // Position and display tooltip
+        tooltipElement.style.display = 'block'; // Make block before measuring
+        tooltipElement.classList.add('visible');
+
+        const containerRect = searchResultsContainer.getBoundingClientRect();
+        const itemRect = targetElement.getBoundingClientRect();
+        const tooltipRect = tooltipElement.getBoundingClientRect();
+        const scrollX = window.scrollX || window.pageXOffset;
+        const scrollY = window.scrollY || window.pageYOffset;
+
+        // Calculate position (prefer right, fallback left, adjust vertically)
+        let top = itemRect.top;
+        let left = containerRect.right + 5; // Default: right of results
+
+        if (left + tooltipRect.width > window.innerWidth) { // Off-screen right?
+            left = containerRect.left - tooltipRect.width - 10; // Try left
+            if (left < 0) { // Still off-screen left?
+                left = window.innerWidth - tooltipRect.width - 10; // Fallback: align right edge
+            }
+        } else if (left < 0) { // Default position is somehow off-screen left?
+            left = 10; // Push right
+        }
+
+        if (top + tooltipRect.height > window.innerHeight) { // Off-screen bottom?
+            top = itemRect.bottom - tooltipRect.height; // Align bottom
+            if (top < 0) { // Still off-screen top?
+                 top = window.innerHeight - tooltipRect.height - 10; // Fallback: align bottom edge
+            }
+        }
+        if (top < 0) { // Off-screen top?
+            top = 10; // Align top edge
+        }
+
+        tooltipElement.style.left = `${left + scrollX}px`;
+        tooltipElement.style.top = `${top + scrollY}px`;
+    }
+
+    /** Hides the player details tooltip. */
+    function hidePlayerTooltip() {
+        if (!tooltipElement) return;
+        tooltipElement.classList.remove('visible');
+        tooltipElement.style.display = 'none'; // Ensure it's hidden
+    }
+
+    // ==========================================================================
+    // UI Rendering Functions
+    // ==========================================================================
+
+    /** Renders the entire draft UI based on the received server state. */
+    function renderUIFromServerState(roomState) {
+        console.log(`Rendering UI for room ${currentRoomCode}:`, roomState);
+
+        if (!roomState || !roomState.settings) {
+            console.warn("[Render] Invalid state received, showing start screen.");
+            showStartScreen(); // Revert to start if state is invalid
+            return;
+        }
+        currentServerState = roomState; // Update the global state reference
+
+        // --- Clear Rejoin State & Update UI Visibility ---
         document.body.classList.remove('is-rejoining');
         if (loadingIndicatorElement) loadingIndicatorElement.style.display = 'none';
-
-        // --- Update UI Visibility ---
+        sessionStorage.setItem('viewingDraft', 'true'); // Mark that user is viewing the draft
         startContainerElement.style.display = 'none';
         draftArea.classList.remove('hidden');
 
-        // --- Update Header Elements ---
+        // --- Update Header & Controls ---
         updateTurnDisplayFromServerState(currentServerState);
-
-        // --- Update Settings Display (Example) ---
-        if (maxSalaryCapInput) { // Update the one in the initial settings too
+        if (maxSalaryCapInput) { // Update initial settings display if needed
              maxSalaryCapInput.value = currentServerState.settings.maxSalary;
         }
-
-        // --- Regenerate Draft Tables ---
-        console.log("[Render] Calling generateTablesFromServerState...");
-        generateTablesFromServerState(currentServerState);
-
-        // --- Enable Correct Input ---
-        console.log("[Render] Calling enableInputsFromServerState...");
-        enableInputsFromServerState(currentServerState);
-
-        // --- Update Control Buttons ---
         if (undoButton) {
             undoButton.disabled = !currentServerState.picks || currentServerState.picks.length === 0;
         }
+
+        // --- Regenerate Draft Tables & Enable Inputs ---
+        generateTablesFromServerState(currentServerState);
+        enableInputsFromServerState(currentServerState); // Enable inputs AFTER tables are generated
     }
 
-    /** Generates all draft tables based on room state */
+    /** Generates all draft tables based on room state. */
     function generateTablesFromServerState(roomState) {
-        console.log(`%c[Generate Tables] Starting generation for ${roomState?.settings?.numTables} tables.`, 'color: orange;');
-        
         if (!tablesContainer || !roomState.settings) return;
 
         tablesContainer.innerHTML = ""; // Clear previous tables
 
-        const { numTables, tableNames, playersPerPos, maxSalary, picks } = roomState.settings;
+        const { numTables, tableNames, playersPerPos, maxSalary } = roomState.settings;
         const validPlayersPerPos = playersPerPos || {};
         const activePositions = Object.keys(validPlayersPerPos).filter(pos => validPlayersPerPos[pos] > 0);
-        const picksByTableAndSlot = mapPicksToSlots(roomState.picks, roomState.settings); // Use roomState.picks
+        const picksForState = roomState.picks || []; // Ensure picks is an array
 
         if (numTables < 1 || activePositions.length === 0) {
-            console.error("generateTablesFromServerState called with invalid settings.");
+            console.error("[Generate Tables] Invalid settings (numTables or playersPerPos).");
             return;
         }
 
@@ -246,41 +333,36 @@ document.addEventListener("DOMContentLoaded", () => {
             tableWrapper.classList.add("table-wrapper");
 
             const table = document.createElement("table");
-            table.dataset.tableId = i;
-            const currentTableName = tableNames[i] || `Table ${i + 1}`;
+            table.dataset.teamId = i;
+            const currentTableName = tableNames[i] || `Team ${i + 1}`; // Use Team as default
 
-            // Create table structure
+            // Create table structure (using template literal for readability)
             table.innerHTML = `
                 <thead>
                     <tr class="table-header">
                         <td colspan="3" contenteditable="true" spellcheck="false">${currentTableName}</td>
                     </tr>
                     <tr>
-                        <th>Pos.</th>
-                        <th>Nom joueur</th>
-                        <th>Salaire</th>
+                        <th>Pos</th>
+                        <th>Player Name</th>
+                        <th>Salary</th>
                     </tr>
                 </thead>
                 <tbody></tbody>
             `;
             const tbody = table.querySelector("tbody");
 
-            const picksForThisTable = (roomState.picks || []).filter(p => p.tableId === i);
-            const filledSlotsCount = { A: 0, D: 0, G: 0 }; // Count filled slots per position for THIS table
+            // Filter picks specifically for this table once
+            const picksForThisTable = picksForState.filter(p => p.teamId === i);
 
+            // Generate rows for each required slot
             activePositions.forEach(pos => {
                 const countForPos = validPlayersPerPos[pos] || 0;
                 for (let j = 0; j < countForPos; j++) {
-                    // Find if *this specific slot* (pos, j) has a pick
-                    const pickForThisSlot = picksForThisTable.filter(p => p.position === pos)[j]; // Get the j-th pick of this position for this table
-
-                    // Pass 'j' as the slotIndex
+                    // Find the j-th pick of this position for this table
+                    const pickForThisSlot = picksForThisTable.filter(p => p.position === pos)[j];
                     const row = createPlayerRow(pos, i, j === 0 ? countForPos : 0, j, pickForThisSlot);
                     tbody.appendChild(row);
-
-                    if (pickForThisSlot) {
-                        filledSlotsCount[pos]++; // Increment count if filled
-                    }
                 }
             });
 
@@ -300,298 +382,286 @@ document.addEventListener("DOMContentLoaded", () => {
             tableWrapper.appendChild(table);
             tablesContainer.appendChild(tableWrapper);
 
-            // Recalculate and display total salary
-            recalculateTotalSalary(table, maxSalary, roomState.picks); // Pass roomState.picks
+            // Calculate and display total salary for the newly created table
+            recalculateTotalSalary(table, maxSalary, picksForState); // Pass all picks
         }
-
-        console.log(`%c[Generate Tables] Finished generating tables. Container innerHTML length: ${tablesContainer?.innerHTML?.length}`, 'color: orange;');
     }
 
-    /** Creates a single player row element */
-    function createPlayerRow(pos, tableId, posRowSpan, slotIndex, playerPick = null) {
+    /** Creates a single player row element (TR) for the draft table. */
+    function createPlayerRow(pos, teamId, posRowSpan, slotIndex, playerPick = null) {
         const row = document.createElement("tr");
-        row.classList.add(pos);
-        row.classList.add('player-slot');
+        row.classList.add(pos, 'player-slot'); // Add position class and generic slot class
         row.dataset.position = pos;
-        row.dataset.tableId = tableId;
-        row.dataset.slotIndex = slotIndex;
+        row.dataset.teamId = teamId;
+        row.dataset.slotIndex = slotIndex; // Index within the position group (0, 1, 2...)
 
+        // --- Vertical Position Cell (if it's the first row for this position) ---
         if (posRowSpan > 0) {
+            const positionMap = { F: "Forwards", D: "Defenders", G: "Goalies" };
             const verticalCell = document.createElement("td");
             verticalCell.rowSpan = posRowSpan;
             verticalCell.classList.add("vertical-text", `vertical-${pos}`);
-            verticalCell.textContent = pos;
+            verticalCell.textContent = positionMap[pos] || pos;
             row.appendChild(verticalCell);
         }
 
+        // --- Player Name Cell ---
         const nameCell = document.createElement("td");
         nameCell.classList.add("player-name-cell");
-        nameCell.style.position = 'relative';
+        nameCell.style.position = 'relative'; // Needed for absolute positioning of search results
 
-        const playerSearchInput = document.createElement("input");
-        playerSearchInput.type = "text";
-        playerSearchInput.classList.add("player-search-input");
-        playerSearchInput.placeholder = "Search player...";
-        playerSearchInput.dataset.tableId = tableId;
-        playerSearchInput.dataset.position = pos;
-        playerSearchInput.dataset.slotIndex = slotIndex;
-        playerSearchInput.disabled = true; // Enabled later if it's this slot's turn
-        playerSearchInput.autocomplete = 'off';
-        playerSearchInput.spellcheck = false;
-
-        const searchResultsContainer = document.createElement("div");
-        searchResultsContainer.classList.add("search-results-container");
-
+        // --- Salary Cell ---
         const salaryCell = document.createElement("td");
         salaryCell.classList.add("salary-cell");
 
+        // --- Populate based on whether the slot is filled ---
         if (playerPick) {
-            playerSearchInput.value = playerPick.playerName || '';
-            playerSearchInput.dataset.playerId = playerPick.playerId;
-            salaryCell.textContent = formatCurrency(playerPick.salary);
-            playerSearchInput.disabled = true; // Ensure picked slots are disabled
+            // --- FILLED SLOT ---
             row.classList.add('filled-slot');
+            salaryCell.textContent = formatCurrency(playerPick.salary);
+
+            const logoPath = getTeamLogoPath(playerPick.team_url);
+            const logoImg = document.createElement('img');
+            logoImg.src = logoPath;
+            logoImg.alt = `${playerPick.city || 'Team'} Logo`; // Use city for better alt text
+            logoImg.classList.add('team-logo');
+
+            const playerNameSpan = document.createElement('span');
+            playerNameSpan.textContent = playerPick.playerName || 'Unknown Player';
+            playerNameSpan.classList.add('picked-player-name');
+
+            nameCell.appendChild(logoImg);
+            nameCell.appendChild(playerNameSpan);
+
+            // Store player ID in a hidden input for potential future use (though not strictly necessary if state is always from server)
+            const hiddenInput = document.createElement("input");
+            hiddenInput.type = "hidden";
+            hiddenInput.value = playerPick.playerName || '';
+            hiddenInput.dataset.playerId = playerPick.playerId;
+            nameCell.appendChild(hiddenInput);
+
         } else {
-            playerSearchInput.dataset.playerId = "";
-            salaryCell.textContent = formatCurrency(0);
+            // --- EMPTY SLOT ---
             row.classList.add('empty-slot');
+            salaryCell.textContent = formatCurrency(0); // Show $0 for empty slots
+
+            const playerSearchInput = document.createElement("input");
+            playerSearchInput.type = "text";
+            playerSearchInput.classList.add("player-search-input");
+            playerSearchInput.placeholder = "Search player...";
+            playerSearchInput.dataset.teamId = teamId; // Store context for event handlers
+            playerSearchInput.dataset.position = pos;
+            playerSearchInput.dataset.slotIndex = slotIndex;
+            playerSearchInput.disabled = true; // Disable by default; enabled by enableInputsFromServerState
+            playerSearchInput.autocomplete = 'off';
+            playerSearchInput.spellcheck = false;
+            playerSearchInput.dataset.playerId = ""; // Ensure no lingering ID
+
+            const searchResultsContainer = document.createElement("div");
+            searchResultsContainer.classList.add("search-results-container");
+
+            nameCell.appendChild(playerSearchInput);
+            nameCell.appendChild(searchResultsContainer);
+
+            // Add input event listeners
+            playerSearchInput.addEventListener("input", handlePlayerSearchInput);
+            playerSearchInput.addEventListener('blur', handlePlayerSearchBlur);
+            playerSearchInput.addEventListener('keydown', handlePlayerSearchKeydown);
         }
 
-        nameCell.appendChild(playerSearchInput);
-        nameCell.appendChild(searchResultsContainer);
         row.appendChild(nameCell);
         row.appendChild(salaryCell);
-
-        playerSearchInput.addEventListener("input", handlePlayerSearchInput);
-        playerSearchInput.addEventListener('blur', handlePlayerSearchBlur);
-        playerSearchInput.addEventListener('keydown', handlePlayerSearchKeydown);
 
         return row;
     }
 
-    /** Updates the turn counter display */
+    /** Updates the turn counter display based on the current state. */
     function updateTurnDisplayFromServerState(roomState) {
-        if (!turnCounterElement || !roomState.settings) {
-             if(turnCounterElement) turnCounterElement.textContent = "";
+        if (!turnCounterElement || !roomState?.settings) {
+             if(turnCounterElement) turnCounterElement.textContent = ""; // Clear if no state
              return;
-        };
+        }
 
-        turnCounterElement.classList.remove('waiting', 'full');
+        turnCounterElement.classList.remove('waiting', 'full'); // Reset status classes
 
-        const { numTables, tableNames, maxSalary /* Add other needed settings here */ } = roomState.settings;
-        const { picks = [], nextTableToPick, selectedPlayerIds /* Add other needed root state here */ } = roomState;
+        const { numTables, tableNames } = roomState.settings;
+        const { nextTableToPick } = roomState;
         const totalSlots = numTables * getTotalSlotsPerTable(roomState);
-        const picksMade = roomState.picks?.length || 0; // Use roomState.picks
+        const picksMade = roomState.picks?.length || 0;
 
-        if (picksMade >= totalSlots && totalSlots > 0) { // Check totalSlots > 0
+        if (totalSlots > 0 && picksMade >= totalSlots) { // Check totalSlots > 0 before declaring complete
             turnCounterElement.textContent = "Draft Complete";
             turnCounterElement.classList.add('full');
         } else if (nextTableToPick >= 0 && nextTableToPick < numTables) {
             const currentRound = getCurrentRound(roomState);
-            const currentTableName = tableNames[nextTableToPick] || `Table ${nextTableToPick + 1}`;
-            turnCounterElement.textContent = `Round ${currentRound} • Turn: ${currentTableName}`;
+            const currentTeamName = tableNames[nextTableToPick] || `Team ${nextTableToPick + 1}`;
+            turnCounterElement.textContent = `Round ${currentRound} • Pick: ${currentTeamName}`;
         } else {
-            // This case means draft isn't complete, but nextTableToPick is invalid.
-            console.warn(`[Update Turn Display] Invalid state: Draft not complete (Picks: ${picksMade}/${totalSlots}), but nextTableToPick is invalid (${nextTableToPick}). Setting to 'Waiting...'`);
-            turnCounterElement.textContent = "Waiting...";
+            // Draft not complete, but nextTableToPick is invalid (e.g., -1 before completion)
+            console.warn(`[Turn Display] Invalid state: Draft ongoing but nextTableToPick=${nextTableToPick}.`);
+            turnCounterElement.textContent = "Waiting..."; // Indicate an issue or intermediate state
             turnCounterElement.classList.add('waiting');
         }
     }
 
-    /** Recalculates and updates the total salary display for a table */
-     function recalculateTotalSalary(tableElement, maxSalary, currentPicks) {
-        const tableId = parseInt(tableElement.dataset.tableId);
-        let currentTotalSalary = 0;
+    /** Recalculates and updates the total salary display for a specific table element. */
+     function recalculateTotalSalary(tableElement, maxSalary, allPicks) {
+        const teamId = parseInt(tableElement.dataset.teamId, 10);
+        if (isNaN(teamId) || !allPicks) return;
 
-        if (!isNaN(tableId) && currentPicks) {
-            currentPicks.forEach(pick => {
-                if (pick.tableId === tableId && pick.salary != null) {
-                    currentTotalSalary += (parseInt(pick.salary) || 0);
-                }
-            });
-        }
+        let currentTotalSalary = 0;
+        allPicks.forEach(pick => {
+            if (pick.teamId === teamId && pick.salary != null) {
+                currentTotalSalary += (parseInt(pick.salary, 10) || 0);
+            }
+        });
 
         const totalSalaryCell = tableElement.querySelector(".total-salary-cell");
         if (totalSalaryCell) {
             totalSalaryCell.textContent = formatCurrency(currentTotalSalary);
             const exceedsCap = maxSalary > 0 && currentTotalSalary > maxSalary;
-            // Use classList.toggle for cleaner style application
             totalSalaryCell.classList.toggle('is-over-cap', exceedsCap);
         }
      }
 
-
-    /** Enables the correct player input fields based on whose turn it is */
+    /** Enables the correct player input fields based on whose turn it is and available slots. */
     function enableInputsFromServerState(roomState) {
-        console.log(`%c[Enable Inputs] Running...`, 'color: purple; font-weight: bold;', roomState);
 
         if (!tablesContainer || !roomState?.settings || !roomState?.picks) {
-            console.warn("[Enable Inputs] Missing tablesContainer, settings, or picks.");
-            // Disable everything if state is bad
+            console.warn("[Enable Inputs] Missing required elements or state.");
+            // Disable everything if state is incomplete
             tablesContainer.querySelectorAll(".player-search-input").forEach(input => input.disabled = true);
             tablesContainer.querySelectorAll(".player-slot").forEach(row => row.classList.remove('clickable-slot'));
             return;
         }
 
-        // 1. Disable ALL inputs and remove clickable class first
-        tablesContainer.querySelectorAll(".player-search-input").forEach(input => {
-            input.disabled = true;
-        });
-        tablesContainer.querySelectorAll(".player-slot").forEach(row => {
-            row.classList.remove('clickable-slot');
-        });
+        // 1. Reset: Disable ALL inputs and remove clickable class first
+        tablesContainer.querySelectorAll(".player-search-input").forEach(input => input.disabled = true);
+        tablesContainer.querySelectorAll(".player-slot").forEach(row => row.classList.remove('clickable-slot'));
 
         const { numTables, playersPerPos } = roomState.settings;
         const { nextTableToPick } = roomState;
-        const totalSlotsPerTable = getTotalSlotsPerTable(roomState); // Use helper
+        const totalSlotsPerTable = getTotalSlotsPerTable(roomState);
         const picksMade = roomState.picks.length;
         const totalSlotsOverall = numTables * totalSlotsPerTable;
 
-        console.log(`[Enable Inputs] State: picksMade=${picksMade}, totalSlotsOverall=${totalSlotsOverall}, nextTableToPick=${nextTableToPick}`);
+        // 2. Enable only if draft is ongoing and turn is valid
+        if (totalSlotsOverall > 0 && picksMade < totalSlotsOverall && nextTableToPick >= 0 && nextTableToPick < numTables) {
+            const activeTeamId = nextTableToPick;
 
-        // Only enable if draft is ongoing and the turn is valid
-        if (picksMade < totalSlotsOverall && nextTableToPick >= 0 && nextTableToPick < numTables) {
-            const activeTableId = nextTableToPick;
-            console.log(`[Enable Inputs] Active table ID: ${activeTableId}`);
-
-            // Find how many players of each position this table ALREADY has
-            const picksForActiveTable = roomState.picks.filter(p => p.tableId === activeTableId);
-            const currentCounts = { A: 0, D: 0, G: 0 };
+            // Count existing picks for the active team by position
+            const picksForActiveTable = roomState.picks.filter(p => p.teamId === activeTeamId);
+            const currentCounts = { F: 0, D: 0, G: 0 };
             picksForActiveTable.forEach(p => {
                 if (currentCounts[p.position] !== undefined) {
                     currentCounts[p.position]++;
                 }
             });
-            console.log(`[Enable Inputs] Current counts for table ${activeTableId}:`, currentCounts);
 
-            // Determine needed counts
-            const neededCounts = playersPerPos || { A: 0, D: 0, G: 0 };
-
-            // Find and enable the next available slot for EACH needed position
+            const neededCounts = playersPerPos || { F: 0, D: 0, G: 0 };
             let foundClickable = false;
+
+            // Iterate through positions to find the next needed slot
             Object.keys(neededCounts).forEach(pos => {
                 const needed = neededCounts[pos] || 0;
                 const current = currentCounts[pos] || 0;
 
                 if (current < needed) {
-                    // This table still needs a player of this position 'pos'
-                    // The next available slot index for this position is 'current' (0-based)
+                    // Find the next empty slot for this position (index = current count)
                     const nextSlotIndex = current;
-
-                    console.log(`[Enable Inputs] Table ${activeTableId} needs a ${pos}. Looking for slot index ${nextSlotIndex}`);
-
-                    // Find the specific row and input
                     const targetRow = tablesContainer.querySelector(
-                        `tr.player-slot[data-table-id="${activeTableId}"][data-position="${pos}"][data-slot-index="${nextSlotIndex}"]`
+                        `tr.player-slot[data-team-id="${activeTeamId}"][data-position="${pos}"][data-slot-index="${nextSlotIndex}"]`
                     );
                     const targetInput = targetRow?.querySelector('.player-search-input');
 
                     if (targetRow && targetInput) {
-                        console.log(`%c[Enable Inputs] Enabling input for Table ${activeTableId}, Pos: ${pos}, Slot Index: ${nextSlotIndex}`, 'color: green; font-weight: bold;');
                         targetInput.disabled = false;
-                        targetRow.classList.add('clickable-slot'); // Add class to the ROW
+                        targetRow.classList.add('clickable-slot'); // Highlight the row
                         foundClickable = true;
-                        // Optional: Focus the first clickable input found (e.g., the Forward)
-                        // if (pos === 'A' || !document.activeElement || document.activeElement.disabled) {
-                        //    targetInput.focus();
-                        // }
+                        // Auto-focus the first enabled input
+                        if (!document.querySelector('.player-search-input:not(:disabled)')) {
+                           targetInput.focus();
+                        }
                     } else {
-                        console.warn(`%c[Enable Inputs] Could not find row/input for Table ${activeTableId}, Pos: ${pos}, Slot Index: ${nextSlotIndex}`, 'color: orange;');
+                        console.warn(`[Enable Inputs] Could not find row/input for Team ${activeTeamId}, Pos ${pos}, Slot ${nextSlotIndex}`);
                     }
                 }
             });
 
             if (!foundClickable) {
-                 console.warn(`%c[Enable Inputs] FAILED: No clickable slots found for active table ${activeTableId}. This might indicate a state mismatch or filled table.`, 'color: red; font-weight: bold;');
-                 if(turnCounterElement) turnCounterElement.classList.add('waiting');
+                 console.warn(`[Enable Inputs] No clickable slots found for active team ${activeTeamId}. Table might be full or state mismatch.`);
             }
-
         } else {
-            console.log(`[Enable Inputs] Condition not met: Draft complete or invalid nextTableToPick. No inputs enabled.`);
         }
+        // Note: updateTurnDisplayFromServerState is called within renderUIFromServerState after this function runs.
+    }
 
-        // Update the turn display AFTER attempting to enable inputs
-        updateTurnDisplayFromServerState(roomState);
-    } 
-
-
-    /** Resets the UI to the initial start screen state */
+    /** Resets the UI to the initial start/join screen state. */
     function showStartScreen() {
-        console.log("Showing start screen...");
 
-        // --- Ensure rejoin state is cleared ---
+        // --- Clear Rejoin State & Session Storage ---
         document.body.classList.remove('is-rejoining');
         if (loadingIndicatorElement) loadingIndicatorElement.style.display = 'none';
-        // ------------------------------------
-
         sessionStorage.removeItem('currentRoomCode');
+        sessionStorage.removeItem('viewingDraft');
 
-        // Reset state
+        // --- Reset Global State ---
         currentServerState = null;
         currentRoomCode = null;
         tempDraftSettings = {};
         attemptingRejoin = false;
 
-        // Update UI visibility
+        // --- Update UI Visibility ---
         settingsOverlay?.classList.remove('visible');
         tableNamesOverlay?.classList.remove('visible');
+        exitConfirmOverlay?.classList.remove('visible'); // Ensure confirm exit is hidden too
         draftArea?.classList.add('hidden');
-        startContainerElement.style.display = 'flex';
+        startContainerElement.style.display = 'flex'; // Use flex for centering
 
-
-        // Clear dynamic content
+        // --- Clear Dynamic Content ---
         if (tablesContainer) tablesContainer.innerHTML = "";
         if (turnCounterElement) turnCounterElement.textContent = "";
         if (settingsRoomCodeText) settingsRoomCodeText.textContent = '';
+        if (tableNamesInputContainer) tableNamesInputContainer.innerHTML = ''; // Clear table name inputs
 
-        // Reset form inputs
+        // --- Reset Form Inputs ---
         if (roomCodeInput) roomCodeInput.value = '';
-        // Consider resetting other start settings inputs if desired
+        // Consider resetting other start settings inputs (tableCount, player counts, etc.) if desired
+        // e.g., if (tableCountInput) tableCountInput.value = '10';
 
-        // Reset button states
+        // --- Reset Button States ---
         if (undoButton) undoButton.disabled = true;
+        if (copyRoomCodeButton) copyRoomCodeButton.disabled = true;
     }
 
     // ==========================================================================
-    // Socket.IO Event Listeners
+    // Socket.IO Event Listeners (Server -> Client)
     // ==========================================================================
 
-    socket.on('draft_started', ({ roomCode, draftState }) => {
-        console.log(`%c[Socket Event: draft_started] Received for room: ${roomCode}`, 'color: blue; font-weight: bold;', draftState);
-        console.log(`Draft started in room: ${roomCode}`);
-        currentRoomCode = roomCode;
+    socket.on('connect', () => {
+        console.log(`Socket connected: ${socket.id}`);
+        attemptRejoinOnLoad(); // Attempt rejoin ONLY after connection is confirmed
+    });
 
-        sessionStorage.setItem('currentRoomCode', roomCode); // Store the room code
+    socket.on('draft_started', ({ roomCode, draftState }) => {
+        currentRoomCode = roomCode;
+        sessionStorage.setItem('currentRoomCode', roomCode); // Store code
 
         // Ensure selectedPlayerIds is a Set
-        if (draftState && draftState.selectedPlayerIds && Array.isArray(draftState.selectedPlayerIds)) {
-            draftState.selectedPlayerIds = new Set(draftState.selectedPlayerIds);
-        } else {
-            draftState.selectedPlayerIds = new Set(); // Ensure it exists
-        }
-        currentServerState = draftState; // Set initial state
-
-        renderUIFromServerState(draftState); // Render the UI
+        draftState.selectedPlayerIds = new Set(draftState.selectedPlayerIds || []);
+        renderUIFromServerState(draftState);
     });
 
     socket.on('join_error', (error) => {
         console.error("Join Error:", error.message);
         alert(`Failed to join draft: ${error.message}`);
-        if(roomCodeInput) roomCodeInput.value = '';
-    
-        // If we failed during an auto-rejoin attempt...
+        if (roomCodeInput) roomCodeInput.value = ''; // Clear input on error
+
         if (attemptingRejoin) {
-            console.log("Rejoin attempt failed, clearing stored code.");
-            // --- Hide loader before showing start screen ---
-            document.body.classList.remove('is-rejoining');
-            if (loadingIndicatorElement) loadingIndicatorElement.style.display = 'none';
-            // ---------------------------------------------
-            sessionStorage.removeItem('currentRoomCode'); // Clear the bad code
-            attemptingRejoin = false; // Reset the flag
-            showStartScreen(); // Show the normal start screen
+            attemptingRejoin = false; // Reset flag
+            showStartScreen(); // Show start screen after failed rejoin
         } else {
-            // Handle join error during normal join attempt (not rejoin)
-            // Ensure start screen is visible if it wasn't already
+            // Ensure start screen is visible for regular join errors if not already
              if (startContainerElement.style.display !== 'flex') {
                  showStartScreen();
              }
@@ -599,107 +669,70 @@ document.addEventListener("DOMContentLoaded", () => {
     });
 
     socket.on('draft_state_update', ({ roomCode, draftState }) => {
-        console.log(`[draft_state_update] Received for room ${roomCode}. Current client room: ${currentRoomCode}. Attempting Rejoin: ${attemptingRejoin}`);
 
-        if (!draftState || !draftState.roomCode || roomCode !== draftState.roomCode) { // Basic validation + ensure consistency
-            console.warn(`Received invalid or inconsistent draft_state_update. Ignoring.`, { roomCode, draftState });
+        // Basic validation
+        if (!draftState || !draftState.roomCode || roomCode !== draftState.roomCode) {
+            console.warn(`Ignoring invalid draft_state_update.`, { roomCode, draftState });
             return;
         }
 
-        // --- Check 1: Is this the state for joining OR rejoining? ---
-        // Handles the direct message from server after 'join_draft' (for both initial join and rejoin)
+        // Case 1: Handling the state received right after a successful join/rejoin request
         if ((currentRoomCode === null || attemptingRejoin) && draftState.roomCode === roomCode) {
-            console.log(`Processing state for joining/rejoining room ${draftState.roomCode}.`);
-            const wasRejoining = attemptingRejoin;
-            attemptingRejoin = false; // Successfully processed state, no longer attempting rejoin
-
+            attemptingRejoin = false; // Mark rejoin attempt as complete (success)
             currentRoomCode = draftState.roomCode;
-            // Only set sessionStorage if it wasn't a rejoin (it should already be there from before refresh)
-            // Update: Let's always set it just in case, doesn't hurt.
-            sessionStorage.setItem('currentRoomCode', currentRoomCode);
+            sessionStorage.setItem('currentRoomCode', currentRoomCode); // Ensure session storage is set
 
+            draftState.selectedPlayerIds = new Set(draftState.selectedPlayerIds || []);
+            renderUIFromServerState(draftState);
 
-            // Ensure selectedPlayerIds is a Set
-            if (draftState.selectedPlayerIds && Array.isArray(draftState.selectedPlayerIds)) {
-                draftState.selectedPlayerIds = new Set(draftState.selectedPlayerIds);
-            } else {
-                draftState.selectedPlayerIds = new Set(); // Initialize if missing
-            }
-
-            currentServerState = draftState; // Store the full state
-            renderUIFromServerState(currentServerState); // Render the draft UI
-
-        // --- Check 2: Is this an update for the room I'm already in (and not rejoining)? ---
+        // Case 2: Handling a regular update for the room the client is already in
         } else if (roomCode === currentRoomCode && currentRoomCode !== null && !attemptingRejoin) {
-            console.log(`Received state update for current room ${roomCode}`);
+            // Assume full state update, replace local state
+            draftState.selectedPlayerIds = new Set(draftState.selectedPlayerIds || []);
+            renderUIFromServerState(draftState);
 
-            // Assume this is a full state update (pick, undo, name change, etc.). Replace the local state.
-
-            // Ensure selectedPlayerIds is handled correctly
-            if (draftState.selectedPlayerIds && Array.isArray(draftState.selectedPlayerIds)) {
-                draftState.selectedPlayerIds = new Set(draftState.selectedPlayerIds);
-            } else {
-                console.warn(`draft_state_update for ${roomCode} missing selectedPlayerIds array. Using existing or initializing empty set.`);
-                draftState.selectedPlayerIds = currentServerState?.selectedPlayerIds instanceof Set ? currentServerState.selectedPlayerIds : new Set();
-            }
-
-            // Update the entire state reference
-            currentServerState = draftState;
-
-            renderUIFromServerState(currentServerState); // Re-render the UI
-
-        // --- Check 3: Ignore irrelevant updates ---
+        // Case 3: Ignoring updates for other rooms or irrelevant states
         } else {
-            console.log(`Ignoring state update for room ${roomCode} (Current room: ${currentRoomCode || 'Start Screen'}, Attempting Rejoin: ${attemptingRejoin}).`);
         }
     });
-    
+
     socket.on('participant_update', ({ roomCode, participants }) => {
-        // Only process if this update is for the room I'm currently in
-        // and I have existing state (meaning I'm actually in the draft view)
+        // Update participant list if the update is for the current room and state exists
         if (roomCode === currentRoomCode && currentServerState) {
-            console.log(`Received participant update for room ${roomCode}. New list size: ${participants?.length}`);
-
-            // Update only the participants part of the local state
-            currentServerState.participants = participants || []; // Update the list, ensure it's an array
-
-            // Trigger a full re-render
+            currentServerState.participants = participants || []; // Update local state
             renderUIFromServerState(currentServerState);
-
         } else {
-            // Ignore if not for my current room, or if I'm on the start screen (currentServerState is null)
-            console.log(`Ignoring participant update for room ${roomCode} (Current room: ${currentRoomCode || 'Start Screen'}, State exists: ${!!currentServerState})`);
         }
     });
 
     socket.on('pick_error', (error) => {
         console.error("Pick Error:", error.message);
         alert(`Error making pick: ${error.message}`);
-        // Re-render based on the last valid state to correct UI
-        if(currentServerState) {
+        // Re-render based on the last valid state to potentially reset input fields
+        if (currentServerState) {
             renderUIFromServerState(currentServerState);
         }
     });
 
-    // Generic error handler
-    socket.on('error', (error) => {
+    socket.on('error', (error) => { // Generic server-side error
         console.error("Server Error:", error.message);
         alert(`An error occurred: ${error.message}`);
+        // Consider if specific errors should trigger showStartScreen()
     });
 
-
     socket.on("connect_error", (err) => {
-        console.error(`Connection Error: ${err.message}`);
+        console.error(`Socket Connection Error: ${err.message}`);
         alert("Failed to connect to the draft server. Please check your connection and refresh.");
-        showStartScreen();
+        showStartScreen(); // Revert to start on connection failure
     });
 
     socket.on("disconnect", (reason) => {
-        console.warn(`Disconnected from server: ${reason}`);
-        // Avoid alert if disconnect was intentional (e.g., user closed tab)
+        console.warn(`Socket disconnected: ${reason}`);
+        // Avoid alert if disconnect was intentional (e.g., user closed tab/navigated away)
         if (reason !== 'io client disconnect') {
-            alert("Lost connection to the draft server. Please refresh.");
+            alert("Lost connection to the draft server. Please refresh the page.");
         }
+        // Revert to start screen on disconnect
         showStartScreen();
     });
 
@@ -707,6 +740,7 @@ document.addEventListener("DOMContentLoaded", () => {
     // Event Handlers (User Actions -> Emit to Server)
     // ==========================================================================
 
+    /** Handles clicking the "Join Draft" button. */
     function handleJoinDraftClick() {
         const code = roomCodeInput?.value.trim().toUpperCase();
         if (!code) {
@@ -714,46 +748,43 @@ document.addEventListener("DOMContentLoaded", () => {
             roomCodeInput?.focus();
             return;
         }
-        console.log(`Attempting to join room: ${code}`);
         socket.emit('join_draft', { roomCode: code });
     }
 
+    /** Handles clicking the "Start New Draft" button, validates settings, shows table name overlay. */
     function handleStartDraftClick() {
         // Read and Validate Start Settings
-        const initialTableCount = parseInt(tableCountInput.value);
-        const initialForwards = parseInt(numForwardsInput.value);
-        const initialDefenders = parseInt(numDefendersInput.value);
-        const initialGoaltenders = parseInt(numGoaltendersInput.value);
-        const initialSerpentine = serpentineOrderCheckbox.checked;
-        const initialSalaryCap = parseInt(maxSalaryCapInput.value);
+        const numTables = parseInt(tableCountInput.value, 10);
+        const numF = parseInt(numForwardsInput.value, 10);
+        const numD = parseInt(numDefendersInput.value, 10);
+        const numG = parseInt(numGoaltendersInput.value, 10);
+        const isSerpentine = serpentineOrderCheckbox.checked;
+        const maxSalary = parseInt(maxSalaryCapInput.value, 10);
 
-        // --- Simple Validation ---
         let errorMessage = "";
-        if (isNaN(initialTableCount) || initialTableCount < 1) errorMessage = "Valid number of tables required (>= 1).";
-        else if (isNaN(initialForwards) || initialForwards < 0 || isNaN(initialDefenders) || initialDefenders < 0 || isNaN(initialGoaltenders) || initialGoaltenders < 0) errorMessage = "Valid player counts required (>= 0).";
-        else if (initialForwards + initialDefenders + initialGoaltenders === 0) errorMessage = "Total players per table cannot be zero.";
-        else if (isNaN(initialSalaryCap) || initialSalaryCap < 0) errorMessage = "Valid Salary Cap required (>= 0).";
+        if (isNaN(numTables) || numTables < 1) errorMessage = "Number of teams must be at least 1.";
+        else if (isNaN(numF) || numF < 0 || isNaN(numD) || numD < 0 || isNaN(numG) || numG < 0) errorMessage = "Player counts per position must be 0 or greater.";
+        else if (numF + numD + numG === 0) errorMessage = "Total players per team cannot be zero.";
+        else if (isNaN(maxSalary) || maxSalary < 0) errorMessage = "Salary Cap must be 0 or greater.";
 
         if (errorMessage) {
             alert(`Invalid Settings: ${errorMessage}`);
             return;
         }
 
-        // Store settings temporarily
-        tempDraftSettings = {
-            initialTableCount, initialForwards, initialDefenders, initialGoaltenders,
-            initialSerpentine, initialSalaryCap
-        };
+        // Store settings temporarily before collecting names
+        tempDraftSettings = { numTables, numF, numD, numG, isSerpentine, maxSalary };
 
         // Prepare and Show Table Names Overlay
-        if (!tableNamesOverlay || !tableNamesInputContainer) return; // Guard
+        if (!tableNamesOverlay || !tableNamesInputContainer) return;
 
-        tableNamesInputContainer.innerHTML = ''; // Clear previous
-        for (let i = 0; i < initialTableCount; i++) {
-            const id = `tableNameInput-${i}`;
-            const placeholder = `Table ${i + 1}`;
+        tableNamesInputContainer.innerHTML = ''; // Clear previous inputs
+        for (let i = 0; i < numTables; i++) {
+            const id = `teamNameInput-${i}`;
+            const placeholder = `Team ${i + 1}`;
             const group = document.createElement('div');
             group.className = 'settings-input-group';
+            // Use template literal for cleaner HTML generation
             group.innerHTML = `
                 <label for="${id}">Name for ${placeholder}:</label>
                 <input type="text" id="${id}" data-table-index="${i}" placeholder="${placeholder}">
@@ -762,157 +793,203 @@ document.addEventListener("DOMContentLoaded", () => {
         }
 
         tableNamesOverlay.classList.add('visible');
-        tableNamesInputContainer.querySelector('input')?.focus();
+        tableNamesInputContainer.querySelector('input')?.focus(); // Focus first name input
     }
 
+    /** Handles confirming table names and emitting 'start_draft'. */
     function handleConfirmTableNamesClick() {
         if (!tableNamesOverlay || !tableNamesInputContainer || !tempDraftSettings) return;
 
         const collectedTableNames = {};
         const inputs = tableNamesInputContainer.querySelectorAll('input[type="text"]');
         inputs.forEach(input => {
-            const index = parseInt(input.dataset.tableIndex);
+            const index = parseInt(input.dataset.tableIndex, 10);
             if (!isNaN(index)) {
-                 collectedTableNames[index] = input.value.trim() || input.placeholder; // Use placeholder if empty
+                 // Use placeholder as default if input is empty or only whitespace
+                 collectedTableNames[index] = input.value.trim() || input.placeholder;
             }
         });
 
-        // Prepare final settings object
+        // Prepare final settings object for the server
         const settings = {
-            numTables: tempDraftSettings.initialTableCount,
+            numTables: tempDraftSettings.numTables,
             tableNames: collectedTableNames,
             playersPerPos: {
-                A: tempDraftSettings.initialForwards,
-                D: tempDraftSettings.initialDefenders,
-                G: tempDraftSettings.initialGoaltenders
+                F: tempDraftSettings.numF,
+                D: tempDraftSettings.numD,
+                G: tempDraftSettings.numG
             },
-            isSerpentineOrder: tempDraftSettings.initialSerpentine,
-            maxSalary: tempDraftSettings.initialSalaryCap
+            isSerpentineOrder: tempDraftSettings.isSerpentine,
+            maxSalary: tempDraftSettings.maxSalary
         };
 
-        console.log("Emitting start_draft with settings:", settings);
-        socket.emit('start_draft', settings); // Server handles room creation
+        socket.emit('start_draft', settings);
 
-        tempDraftSettings = {}; // Clear temp settings
+        tempDraftSettings = {}; // Clear temporary settings
         tableNamesOverlay.classList.remove('visible');
     }
 
+    /** Handles input changes in player search fields, triggers search and displays results. */
     function handlePlayerSearchInput(event) {
-        const input = event.target;
-        const searchTerm = input.value.trim();
-        const position = input.dataset.position;
-        const resultsContainer = input.nextElementSibling;
+        const inputElement = event.target;
+        const searchTerm = inputElement.value;
+        const position = inputElement.dataset.position;
+        const searchResultsContainer = inputElement.nextElementSibling;
 
-        if (!resultsContainer || !position || !currentServerState?.selectedPlayerIds) {
-             if (resultsContainer) resultsContainer.style.display = "none";
-             return;
+        if (!searchResultsContainer) return;
+
+        searchResultsContainer.innerHTML = ""; // Clear previous results
+        searchResultsContainer.style.display = 'none'; // Hide initially
+
+        if (searchTerm.length < 2) { // Only search if term is long enough
+            hidePlayerTooltip();
+            return;
         }
 
-        resultsContainer.innerHTML = "";
-        resultsContainer.style.display = "none"; // Hide initially
+        // Ensure currentServerState and selectedPlayerIds exist before filtering
+        const selectedIds = currentServerState?.selectedPlayerIds instanceof Set
+            ? currentServerState.selectedPlayerIds
+            : new Set();
 
-        if (searchTerm.length < 1) return; // Min search length
+        const availablePlayers = getAvailablePlayers(position, selectedIds);
+        const filteredPlayers = searchPlayers(searchTerm, availablePlayers); // Use imported search
 
-        const availablePlayers = getAvailablePlayers(position, currentServerState.selectedPlayerIds);
-        const matchingPlayers = searchPlayers(searchTerm, availablePlayers).slice(0, 10); // Limit results
+        if (filteredPlayers.length > 0) {
+            searchResultsContainer.style.display = 'block'; // Show container
+            filteredPlayers.slice(0, 10).forEach(player => { // Limit displayed results
+                const item = document.createElement("div");
+                item.classList.add("search-result-item");
+                // Store all necessary data on the result item itself
+                item.dataset.playerId = player.id;
+                item.dataset.playerName = player.name;
+                item.dataset.salary = player.cap_hit; // Use cap_hit for salary
+                item.dataset.position = player.position;
+                item.dataset.playerTeamUrl = player.team_url || '';
+                item.dataset.city = player.city || '';
+                item.dataset.age = player.age ?? '';
 
-        if (matchingPlayers.length > 0) {
-            matchingPlayers.forEach(player => {
-                const option = document.createElement("div");
-                option.className = "player-option";
-                option.dataset.playerId = player.id;
-                option.textContent = `${player.name} (${formatCurrency(player.cap_hit)})`;
-                option.addEventListener('mousedown', handlePlayerOptionMouseDown); // Use mousedown
-                resultsContainer.appendChild(option);
+                const logoPath = getTeamLogoPath(player.team_url);
+                const logoImg = document.createElement('img');
+                logoImg.src = logoPath;
+                logoImg.alt = player.city || 'Team';
+                logoImg.classList.add('search-result-logo');
+                item.appendChild(logoImg);
+
+                const nameSpan = document.createElement('span');
+                nameSpan.textContent = player.name;
+                item.appendChild(nameSpan);
+
+                // Add listeners for interaction
+                item.addEventListener("mousedown", handlePlayerOptionMouseDown); // Mousedown fires before blur
+                item.addEventListener("mouseenter", showPlayerTooltip);
+                item.addEventListener("mouseleave", hidePlayerTooltip);
+
+                searchResultsContainer.appendChild(item);
             });
-            resultsContainer.style.display = "block"; // Show if results exist
+        } else {
+             hidePlayerTooltip(); // Hide tooltip if no results found
         }
     }
 
+    /** Hides search results when the input loses focus (with delay). */
     function handlePlayerSearchBlur(event) {
         const resultsContainer = event.target.nextElementSibling;
-        // Delay hiding to allow mousedown on results to register
+        // Delay hiding to allow click/mousedown on results to register
         setTimeout(() => {
+            // Hide if focus is no longer in input or results container
             if (resultsContainer && document.activeElement !== event.target && !resultsContainer.contains(document.activeElement)) {
                 resultsContainer.style.display = 'none';
+                hidePlayerTooltip(); // Also hide tooltip
             }
-        }, 150);
+        }, 150); // 150ms delay seems reasonable
     }
 
+    /** Handles keyboard events (Enter, Escape) in player search input. */
     function handlePlayerSearchKeydown(event) {
+        const resultsContainer = event.target.nextElementSibling;
+        if (!resultsContainer) return;
+
         if (event.key === 'Enter') {
-            event.preventDefault();
-            const firstOption = event.target.nextElementSibling?.querySelector('.player-option');
+            event.preventDefault(); // Prevent form submission/newline
+            const firstOption = resultsContainer.querySelector('.search-result-item'); // Use updated class
             if (firstOption) {
                 // Simulate mousedown to trigger selection logic
                 firstOption.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
             }
         } else if (event.key === 'Escape') {
-             event.target.nextElementSibling.style.display = 'none'; // Hide on Escape
+             resultsContainer.style.display = 'none'; // Hide results on Escape
+             hidePlayerTooltip();
         }
     }
 
+    /** Handles clicking (mousedown) on a player option in the search results. */
     function handlePlayerOptionMouseDown(event) {
-        event.preventDefault(); // Prevent input blur
+        event.preventDefault(); // Prevent input blur from hiding results immediately
         if (!currentRoomCode) {
              console.error("Cannot make pick: Not in a room.");
              alert("Error: Not connected to a draft room.");
              return;
         }
 
-        const playerOption = event.currentTarget;
+        const playerOption = event.currentTarget; // The clicked div.search-result-item
         const resultsContainer = playerOption.parentElement;
-        const inputElement = resultsContainer?.previousElementSibling;
-        if (!inputElement || !resultsContainer) return;
+        const inputElement = resultsContainer?.previousElementSibling; // The input field
+        const parentRow = inputElement?.closest('tr.player-slot'); // Get the table row
+        const parentTable = parentRow?.closest('table'); // Get the table
 
-        const parentTable = inputElement.closest('table');
-        const playerId = parseInt(playerOption.dataset.playerId);
-        const player = playersIndex.find(p => p.id === playerId);
-        const tableId = parentTable ? parseInt(parentTable.dataset.tableId) : -1;
+        if (!inputElement || !resultsContainer || !parentRow || !parentTable) {
+            console.error("Could not find necessary parent elements for pick selection.");
+            return;
+        }
 
-        if (player && tableId !== -1) {
+        const playerId = parseInt(playerOption.dataset.playerId, 10);
+        const teamId = parseInt(parentTable.dataset.teamId, 10); // Get teamId from table
+        const player = playersIndex.find(p => p.id === playerId); // Find full player data
+
+        if (player && !isNaN(teamId)) {
+            // Prepare data payload for the server
             const pickData = {
                 playerId: player.id,
                 playerName: player.name,
-                salary: parseInt(player.cap_hit) || 0,
+                salary: parseInt(player.cap_hit, 10) || 0, // Use cap_hit, ensure integer
                 position: player.position,
-                tableId: tableId,
+                teamId: teamId, // Use teamId from the table context
+                team_url: player.team_url || '', // Include player's NHL team URL
+                city: player.city || '' // Include player's NHL team city
             };
 
-            console.log(`Emitting make_pick for room ${currentRoomCode}:`, pickData);
             socket.emit('make_pick', { roomCode: currentRoomCode, pickData: pickData });
 
-            // --- Client-Side Feedback ---
-            resultsContainer.style.display = "none";
-            resultsContainer.innerHTML = "";
-            inputElement.disabled = true; // Disable input temporarily
-            inputElement.value = '';
-            inputElement.placeholder = "Processing..."; // Indicate processing
+            // --- Optimistic UI Update / Feedback ---
+            resultsContainer.style.display = "none"; // Hide results
+            resultsContainer.innerHTML = "";        // Clear results
+            inputElement.disabled = true;           // Disable input immediately
+            inputElement.value = '';                // Clear search term
+            inputElement.placeholder = "Processing..."; // Indicate action
+            // The full row update will happen when 'draft_state_update' is received
 
         } else {
-            console.error("Could not find necessary elements or player data for selection.");
+            console.error("Could not find player data or valid teamId for selection.", { playerId, teamId });
         }
     }
 
+    /** Handles clicking the "Undo Last Pick" button. */
     function handleUndoClick() {
         if (!currentRoomCode) {
              console.error("Cannot undo: Not in a room.");
-             alert("Error: Not connected to a draft room.");
              return;
         }
         if (!currentServerState?.picks?.length) {
-            console.warn("Undo clicked, but no picks exist.");
-            return; // No picks to undo
+            console.warn("Undo clicked, but no picks exist in current state.");
+            return; // Nothing to undo
         }
-        console.log(`Emitting undo_pick for room ${currentRoomCode}`);
         socket.emit('undo_pick', { roomCode: currentRoomCode });
     }
 
+    /** Handles finishing editing a table name (on blur). */
     function handleTableNameEdit(event) {
-        if (!currentRoomCode) {
-             console.error("Cannot update table name: Not in a room.");
-             // Optionally revert local change if desired
-             // event.target.textContent = currentServerState?.settings?.tableNames?.[tableId] || `Table ${tableId + 1}`;
+        if (!currentRoomCode || !currentServerState?.settings?.tableNames) {
+             console.error("Cannot update table name: Not in a room or state invalid.");
              return;
         }
 
@@ -920,215 +997,169 @@ document.addEventListener("DOMContentLoaded", () => {
         const table = headerCell.closest('table');
         if (!table) return;
 
-        const tableId = parseInt(table.dataset.tableId);
-        let newName = headerCell.textContent.trim();
+        const teamId = parseInt(table.dataset.teamId, 10);
+        let newName = headerCell.textContent.trim(); // Get trimmed new name
 
-        if (!isNaN(tableId)) {
-            const defaultName = `Table ${tableId + 1}`;
+        if (!isNaN(teamId)) {
+            const defaultName = `Team ${teamId + 1}`;
+            // If name is empty after trimming, revert to default
             if (newName === "") {
                 newName = defaultName;
-                headerCell.textContent = newName; // Revert display locally
+                headerCell.textContent = newName; // Update display locally immediately
             }
 
-            const serverName = currentServerState?.settings?.tableNames?.[tableId] || defaultName;
+            // Get the name currently known by the server state
+            const serverName = currentServerState.settings.tableNames[teamId] || defaultName;
 
+            // Only emit if the name has actually changed
             if (newName !== serverName) {
-                 console.log(`Emitting update_table_name for room ${currentRoomCode}: Table ${tableId}, Name: ${newName}`);
-                 socket.emit('update_table_name', { roomCode: currentRoomCode, tableId: tableId, newName: newName });
+                 socket.emit('update_table_name', { roomCode: currentRoomCode, teamId: teamId, newName: newName });
             }
-            // Server state update will confirm the name
+            // The name will be officially updated via 'draft_state_update' from server
         }
     }
 
+    /** Handles Enter key press within table name cell to trigger blur. */
     function handleTableNameKeydown(event) {
         if (event.key === 'Enter') {
-            event.preventDefault();
-            event.target.blur(); // Trigger blur -> handleTableNameEdit
+            event.preventDefault(); // Prevent newline in contenteditable
+            event.target.blur(); // Trigger the blur event handler
         }
     }
 
+    /** Handles clicking the main settings button (top right). */
     function handleSettingsButtonClick() {
         if (!settingsOverlay) return;
 
-        // Update the room code display inside the settings menu
-        if (settingsRoomCodeText && currentRoomCode) {
-            // Display only the code in the text span
-            settingsRoomCodeText.textContent = currentRoomCode;
-        } else if (settingsRoomCodeText) {
-            settingsRoomCodeText.textContent = ''; // Clear if no room code
+        // Update room code display within the overlay
+        if (settingsRoomCodeText) {
+            settingsRoomCodeText.textContent = currentRoomCode || ''; // Show code or empty string
         }
-
-        // Enable/disable copy button based on whether there's a code
         if (copyRoomCodeButton) {
-            copyRoomCodeButton.disabled = !currentRoomCode;
+            copyRoomCodeButton.disabled = !currentRoomCode; // Enable copy only if in a room
         }
 
-        // Update any settings displayed in the overlay from currentServerState if needed
-        // Example: if maxSalaryCapInput was also in the overlay
-        // if(currentServerState?.settings?.maxSalary != null) {
-        //     const overlayMaxSalaryInput = settingsOverlay.querySelector('#someOverlayMaxSalaryInput');
-        //     if(overlayMaxSalaryInput) overlayMaxSalaryInput.value = currentServerState.settings.maxSalary;
+        // Update other settings displayed in the overlay if necessary
+        // e.g., const overlayMaxSalaryInput = settingsOverlay.querySelector('#overlayMaxSalary');
+        // if (overlayMaxSalaryInput && currentServerState?.settings) {
+        //     overlayMaxSalaryInput.value = currentServerState.settings.maxSalary;
         // }
+
         settingsOverlay.classList.add('visible');
     }
 
-    // Handles the click on the copy room code button
+    /** Handles clicking the "Copy" button for the room code. */
     function handleCopyRoomCodeClick() {
-        console.log("Copy button clicked."); // Log 1: Verify click handler runs
-
-        // Check if clipboard API is supported at all
         if (!navigator.clipboard) {
-            console.warn("Clipboard API not supported by this browser.");
-            alert("Sorry, copying to clipboard is not supported by your browser.");
+            alert("Clipboard API not supported by this browser.");
             return;
         }
-        // Check if we have a room code
         if (!currentRoomCode) {
-             console.warn("Cannot copy room code: No code available.");
              return;
         }
 
-        // Log 2: Verify the room code value just before copying
-        console.log('Attempting to copy:', currentRoomCode);
-
         navigator.clipboard.writeText(currentRoomCode).then(() => {
-            // Log 3: Check if the success part (.then) is reached
-            console.log('Clipboard write promise resolved successfully.');
-
             // Success feedback
             const originalContent = copyRoomCodeButton.innerHTML;
-            const wasSVG = copyRoomCodeButton.querySelector('svg');
-
             copyRoomCodeButton.textContent = 'Copied!';
             copyRoomCodeButton.disabled = true;
-
             setTimeout(() => {
-                if (wasSVG) {
-                    copyRoomCodeButton.innerHTML = originalContent;
-                } else {
-                    copyRoomCodeButton.textContent = originalContent;
-                }
+                copyRoomCodeButton.innerHTML = originalContent; // Restore original content (incl. SVG)
                 copyRoomCodeButton.disabled = false;
-            }, 1500);
-
+            }, 1500); // Show feedback for 1.5 seconds
         }).catch(err => {
-            // Log 4: Check if the error part (.catch) is reached, even if no error shows
-            console.error('Clipboard write promise rejected:', err);
-
-            // Error feedback
-            alert("Could not copy room code automatically.\nThis feature requires a secure connection (HTTPS) or localhost.\nPlease try copying manually.");
+            console.error('Failed to copy room code:', err);
+            alert("Could not copy room code automatically.\nPlease try copying manually.");
         });
-
-        // Log 5: Check if the function completes execution
-        console.log("handleCopyRoomCodeClick finished.");
     }
 
-
+    /** Handles clicking the "Close" button in the settings overlay. */
     function handleCloseSettingsClick() {
         settingsOverlay?.classList.remove('visible');
     }
 
+    /** Handles clicking the background of an overlay to close it. */
     function handleOverlayBackgroundClick(event) {
-        // Close overlay if click is directly on the background
-        if (event.target === settingsOverlay || event.target === tableNamesOverlay) {
+        // Close overlay if the click is directly on the overlay background itself
+        if (event.target === settingsOverlay || event.target === tableNamesOverlay || event.target === exitConfirmOverlay) {
             event.target.classList.remove('visible');
+            // If table name overlay is cancelled this way, clear temp settings
             if (event.target === tableNamesOverlay) {
-                 tempDraftSettings = {}; // Clear temp settings if table name overlay is cancelled this way
+                 tempDraftSettings = {};
             }
         }
     }
 
+    /** Handles clicking "Cancel" in the table names overlay. */
     function handleCancelTableNamesClick() {
         tableNamesOverlay?.classList.remove('visible');
         tempDraftSettings = {}; // Clear temp settings
     }
 
+    /** Handles clicking the "Exit Draft" button (shows confirmation). */
     function handleExitDraftClick() {
         if (exitConfirmOverlay) {
             exitConfirmOverlay.classList.add('visible');
         } else {
-            console.error("Exit confirmation overlay not found!");
+            // If confirmation doesn't exist, exit directly (fallback)
+            handleConfirmExit();
         }
     }
 
-    // Handles the click on the "Yes, Exit" button in the custom modal
+    /** Handles clicking "Yes, Exit" in the confirmation overlay. */
     function handleConfirmExit() {
-        if (exitConfirmOverlay) {
-            exitConfirmOverlay.classList.remove('visible'); // Hide the modal
-        }
+        exitConfirmOverlay?.classList.remove('visible'); // Hide confirmation
 
-        // Tell the server we are leaving *before* clearing local state
+        // Notify server *before* changing local state/UI
         if (currentRoomCode && socket.connected) {
-            console.log(`Emitting leave_draft for room ${currentRoomCode}`);
             socket.emit('leave_draft', { roomCode: currentRoomCode });
         }
 
-        // Perform the actual exit actions
-        sessionStorage.removeItem('currentRoomCode');
-        showStartScreen(); // Revert UI
+        // Reset UI to start screen
+        showStartScreen();
     }
 
-    // Handles the click on the "Cancel" button in the custom modal
+    /** Handles clicking "Cancel" in the exit confirmation overlay. */
     function handleCancelExit() {
-        if (exitConfirmOverlay) {
-            exitConfirmOverlay.classList.remove('visible'); // Just hide the modal
-        }
+        exitConfirmOverlay?.classList.remove('visible'); // Just hide the modal
     }
 
     // ==========================================================================
     // Attaching Event Listeners
     // ==========================================================================
+    /** Utility to safely attach event listeners. */
     function attachListener(element, event, handler, elementName) {
-        if (elementName === 'Copy Room Code Button') {
-            console.log(`Attempting to attach listener for: ${elementName}`);
-            if (element) {
-                console.log(`   Element found:`, element);
-            } else {
-                console.error(`   ERROR: Element NOT found for ${elementName}!`);
-            }
-        }
-    
         if (element) {
             element.addEventListener(event, handler);
         } else {
-            if (elementName !== 'Copy Room Code Button') {
-                 console.error(`${elementName} button/element not found.`);
-            }
+            console.error(`Failed to attach listener: Element "${elementName}" not found.`);
         }
     }
 
-    attachListener(joinDraftButton, 'click', handleJoinDraftClick, 'Join Draft');
-    attachListener(startDraftButton, 'click', handleStartDraftClick, 'Start Draft');
-    attachListener(exitDraftButton, 'click', handleExitDraftClick, 'Exit Draft');
-    attachListener(undoButton, 'click', handleUndoClick, 'Undo');
-    attachListener(settingsButton, 'click', handleSettingsButtonClick, 'Settings');
-    attachListener(settingsOverlay, 'click', handleOverlayBackgroundClick, 'Settings Overlay');
-    attachListener(closeSettingsButton, 'click', handleCloseSettingsClick, 'Close Settings');
-    attachListener(confirmTableNamesButton, 'click', handleConfirmTableNamesClick, 'Confirm Table Names');
-    attachListener(cancelTableNamesButton, 'click', handleCancelTableNamesClick, 'Cancel Table Names');
-    attachListener(tableNamesOverlay, 'click', handleOverlayBackgroundClick, 'Table Names Overlay');
+    // --- Start/Join Screen ---
+    attachListener(joinDraftButton, 'click', handleJoinDraftClick, 'Join Draft Button');
+    attachListener(startDraftButton, 'click', handleStartDraftClick, 'Start Draft Button');
+
+    // --- Draft Area Controls ---
+    attachListener(undoButton, 'click', handleUndoClick, 'Undo Button');
+    attachListener(settingsButton, 'click', handleSettingsButtonClick, 'Settings Button');
+
+    // --- Settings Overlay ---
+    attachListener(settingsOverlay, 'click', handleOverlayBackgroundClick, 'Settings Overlay Background');
+    attachListener(closeSettingsButton, 'click', handleCloseSettingsClick, 'Close Settings Button');
+    attachListener(copyRoomCodeButton, 'click', handleCopyRoomCodeClick, 'Copy Room Code Button');
+    attachListener(exitDraftButton, 'click', handleExitDraftClick, 'Exit Draft Button (in Settings)');
+
+    // --- Table Names Overlay ---
+    attachListener(tableNamesOverlay, 'click', handleOverlayBackgroundClick, 'Table Names Overlay Background');
+    attachListener(confirmTableNamesButton, 'click', handleConfirmTableNamesClick, 'Confirm Table Names Button');
+    attachListener(cancelTableNamesButton, 'click', handleCancelTableNamesClick, 'Cancel Table Names Button');
+
+    // --- Exit Confirmation Overlay ---
+    attachListener(exitConfirmOverlay, 'click', handleOverlayBackgroundClick, 'Exit Confirm Overlay Background');
     attachListener(confirmExitButton, 'click', handleConfirmExit, 'Confirm Exit Button');
     attachListener(cancelExitButton, 'click', handleCancelExit, 'Cancel Exit Button');
-    attachListener(exitConfirmOverlay, 'click', (event) => {
-        if (event.target === exitConfirmOverlay) {
-            handleCancelExit(); // Close if background is clicked
-        }
-    }, 'Exit Confirm Overlay Background');
-    attachListener(copyRoomCodeButton, 'click', handleCopyRoomCodeClick, 'Copy Room Code Button');
 
-
-    // ==========================================================================
-    // Initialization
-    // ==========================================================================
-    console.log("Draft application client initialized.");
-
-    // Check if the socket is already connected when the script runs (e.g., hot reload)
-    if (socket.connected) {
-        console.log("Socket already connected on init.");
-        attemptRejoinOnLoad(); // Try rejoining immediately if connected
-    } else {
-        console.log("Socket not connected yet. Waiting for 'connect' event to determine initial UI.");
-    }
+    // Note: Listeners for dynamic elements (table names, search inputs/results) are added in createPlayerRow and generateTablesFromServerState
 
 }); // End DOMContentLoaded
-

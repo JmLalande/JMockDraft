@@ -2,65 +2,60 @@
    Base & Variables
    ========================================================================== */
 :root {
+    /* Colors */
     --primary-color: #0d6efd;
     --primary-hover-color: #0b5ed7;
     --danger-color: #dc3545;
     --danger-hover-color: #bb2d3b;
+    --success-color: #28a745; 
+    --info-color: #2a6aa8;    
     --light-gray: #f8f9fa;
     --medium-gray: #dee2e6;
+    --medium-gray-hover: #c8cfd6; 
     --dark-gray: #6c757d;
     --border-color: #ced4da;
+    --border-color-light: #eee; 
+    --border-color-medium: #ccc; 
+    --border-color-dark: #aaa;   
     --text-color: #212529;
     --text-muted-color: #555;
     --white: #fff;
     --black: #000;
-    --font-family-sans-serif: Arial, sans-serif;
-    --border-radius: 0.375rem; /* ~6px */
-    --border-radius-sm: 0.25rem; /* ~4px */
-    --spacing-sm: 0.5rem;  /* 8px */
-    --spacing-md: 1rem;    /* 16px */
-    --spacing-lg: 1.5rem;  /* 24px */
+    --overlay-bg: rgba(0, 0, 0, 0.6); 
+    --table-header-bg: navy; 
+    --input-disabled-bg: #f0f0f0; 
+    --input-disabled-text: var(--dark-gray); 
+    --input-disabled-border: var(--medium-gray); 
+    --tooltip-bg: #333; 
 
-    --pos-a-bg: #f4c7c3;
+    /* Position/Status Backgrounds */
+    --pos-f-bg: #f4c7c3;
     --pos-d-bg: #c3daf4;
     --pos-g-bg: #d6eadf;
-
     --waiting-bg: #fff3cd;
     --waiting-text: #664d03;
     --full-bg: #d1e7dd;
     --full-text: #0f5132;
+
+    /* Typography */
+    --font-family-sans-serif: Arial, sans-serif;
+
+    /* Sizing & Spacing */
+    --border-radius: 0.375rem;
+    --border-radius-sm: 0.25rem;
+    --spacing-sm: 0.5rem;
+    --spacing-md: 1rem;
+    --spacing-lg: 1.5rem;
+
+    /* Z-Indexes */
+    --z-index-search-results: 10;
+    --z-index-settings-btn: 100;
+    --z-index-overlay: 1000;
+    --z-index-loading: 9999;
 }
 
 /* ==========================================================================
-   Refresh logic
-   ========================================================================== */
-
-body.is-rejoining #start-screen {
-    display: none !important;
-}
-
-#loading-indicator {
-    display: none;
-    position: fixed;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-    background-color: #f0f0f0;
-    color: #333;
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    font-size: 1.2em;
-    z-index: 9999;
-}
-body.is-rejoining #loading-indicator {
-    display: flex;
-}
-
-
-/* ==========================================================================
-   General Styles & Typography
+   Base & General Styles
    ========================================================================== */
 body {
     font-family: var(--font-family-sans-serif);
@@ -85,11 +80,37 @@ h1 {
 
 /* Utility */
 .hidden {
-    display: none !important; /* Use important if needed to override other display styles */
+    display: none !important;
 }
 
 /* ==========================================================================
-   Initial Start Screen Styles
+   Loading / Rejoin State
+   ========================================================================== */
+body.is-rejoining #start-screen {
+    display: none !important;
+}
+
+#loading-indicator {
+    display: none; /* Hidden by default, shown by body class */
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-color: var(--input-disabled-bg); /* Reused variable */
+    color: var(--tooltip-bg); /* Reused variable */
+    justify-content: center;
+    align-items: center;
+    font-size: 1.2em;
+    z-index: var(--z-index-loading);
+}
+
+body.is-rejoining #loading-indicator {
+    display: flex;
+}
+
+/* ==========================================================================
+   Initial Start Screen
    ========================================================================== */
 .initial-start-container {
     display: flex;
@@ -139,9 +160,9 @@ h1 {
 }
 
 #start-settings .settings-input-group input[type="number"],
-#start-settings .settings-input-group input[type="text"], /* Added text for consistency */
+#start-settings .settings-input-group input[type="text"],
 #join-settings-form .settings-input-group input[type="text"] {
-    width: 100%; /* Make inputs fill their group */
+    width: 100%;
     padding: var(--spacing-sm);
     border: 1px solid var(--border-color);
     border-radius: var(--border-radius-sm);
@@ -149,13 +170,13 @@ h1 {
     font-size: 1em;
 }
 
+/* Specific width overrides for number inputs */
 #start-settings .settings-input-group input[type="number"] {
-     width: 80px; /* Override for number inputs if needed */
+     width: 80px;
 }
 #start-settings #maxSalaryCap {
     width: 150px;
 }
-
 
 #start-settings .settings-checkbox-group {
     display: flex;
@@ -168,7 +189,7 @@ h1 {
     margin: 0 var(--spacing-sm) 0 0;
     width: auto;
     transform: scale(1.1);
-    flex-shrink: 0; /* Prevent checkbox from shrinking */
+    flex-shrink: 0;
 }
 
 #start-settings .settings-checkbox-group label {
@@ -178,7 +199,7 @@ h1 {
 }
 
 /* ==========================================================================
-   Main Draft Area Styles
+   Main Draft Area Header & Controls
    ========================================================================== */
 .draft-header {
     margin-bottom: var(--spacing-lg);
@@ -189,9 +210,9 @@ h1 {
     display: none; /* Hidden by default, shown by JS */
     margin-left: var(--spacing-md);
     font-size: 0.8em;
-    background-color: #eee;
+    background-color: var(--border-color-light);
     padding: 3px 8px;
-    border-radius: 4px;
+    border-radius: var(--border-radius-sm);
     font-weight: normal;
     white-space: nowrap;
 }
@@ -200,9 +221,9 @@ h1 {
     font-size: 0.75em;
     font-weight: normal;
     color: var(--text-muted-color);
-    background-color: #f0f0f0;
+    background-color: var(--input-disabled-bg);
     padding: 4px 10px;
-    border-radius: 12px;
+    border-radius: 12px; /* Specific radius */
     white-space: nowrap;
     flex-basis: 100%; /* Force wrap below H1 text */
     margin-top: var(--spacing-sm);
@@ -222,24 +243,22 @@ h1 {
     display: flex;
     justify-content: flex-start;
     align-items: center;
-    margin-top: var(--spacing-md); /* Space below H1 */
+    margin-top: var(--spacing-md);
     width: 100%;
     box-sizing: border-box;
+    gap: var(--spacing-sm); /* Use gap instead of margin */
 }
 
+/* Apply base button styles and specific overrides */
 .draft-controls button {
-    margin: 0 var(--spacing-sm);
     padding: 6px 12px;
     font-size: 1rem;
-    cursor: pointer;
+    /* Inherits .btn styles via HTML class */
 }
 
-.draft-controls button:first-child { margin-left: 0; }
-.draft-controls button:last-child { margin-right: 0; }
-
 .draft-controls button:disabled {
-    cursor: not-allowed;
-    opacity: 0.6;
+    /* Inherits .btn:disabled styles */
+    opacity: 0.6; /* Slightly different opacity if needed */
 }
 
 .draft-controls button#undo-button {
@@ -252,6 +271,9 @@ h1 {
     display: block;
 }
 
+/* ==========================================================================
+   Tables Container & Wrapper
+   ========================================================================== */
 #tables-container {
     display: flex;
     gap: var(--spacing-lg);
@@ -270,21 +292,21 @@ h1 {
 }
 
 /* ==========================================================================
-   Draft Table Styles
+   Draft Table General Styles
    ========================================================================== */
 table {
     border-collapse: collapse;
     margin-bottom: var(--spacing-lg);
     text-align: center;
-    width: 100%; /* Make table fill its wrapper */
-    border: 2px solid var(--black); /* Add outer border */
+    width: 100%;
+    border: 2px solid var(--black);
 }
 
 th,
 td {
-    border: 1px solid var(--dark-gray); /* Lighter internal borders */
+    border: 1px solid var(--dark-gray);
     padding: var(--spacing-sm);
-    position: relative; /* Context for search results */
+    position: relative; /* Context for search results, tooltips */
     vertical-align: middle;
 }
 
@@ -295,15 +317,16 @@ th {
 }
 
 .table-header {
-    background-color: navy; /* Consider using a variable */
+    background-color: var(--table-header-bg);
     color: var(--white);
     font-weight: bold;
     font-size: 1.2em;
 }
 .table-header td {
-    border-color: navy; /* Match background */
+    border-color: var(--table-header-bg); /* Match background */
 }
 
+/* Column Widths */
 table thead th:nth-child(2),
 table tbody td:nth-child(2) {
     width: 55%;
@@ -315,21 +338,23 @@ table tbody td:nth-child(3) {
 }
 
 table thead th:nth-child(1),
-table tbody td:nth-child(1):not(.vertical-text) { /* Exclude the vertical text cell */
+table tbody td:nth-child(1):not(.vertical-text) {
     width: 10%;
 }
 
 /* Position Background Colors */
-.A, .vertical-A { background-color: var(--pos-a-bg); }
+.F, .vertical-F { background-color: var(--pos-f-bg); }
 .D, .vertical-D { background-color: var(--pos-d-bg); }
 .G, .vertical-G { background-color: var(--pos-g-bg); }
 
 .vertical-text {
     writing-mode: vertical-rl;
-    text-orientation: mixed; /* Better compatibility than upright */
+    text-orientation: mixed;
     white-space: nowrap;
-    padding: var(--spacing-sm) 0; /* Adjust padding */
+    padding: var(--spacing-sm) 0;
     font-weight: bold;
+    text-align: center;
+    transform: rotate(180deg);
 }
 
 .total-row {
@@ -337,14 +362,17 @@ table tbody td:nth-child(1):not(.vertical-text) { /* Exclude the vertical text c
     background-color: var(--light-gray);
 }
 .total-row td {
-    border-top: 2px solid var(--black); /* Emphasize total row */
+    border-top: 2px solid var(--black);
 }
 
-.total-salary-cell.is-over-cap { /* Style specifically when over cap using class */
+.total-salary-cell.is-over-cap {
     color: var(--danger-color);
     font-weight: bold;
 }
 
+/* ==========================================================================
+   Player Search Input & Results
+   ========================================================================== */
 .player-search-input {
     width: 100%;
     padding: 5px;
@@ -352,83 +380,121 @@ table tbody td:nth-child(1):not(.vertical-text) { /* Exclude the vertical text c
     border-radius: var(--border-radius-sm);
     font-size: 1rem;
     box-sizing: border-box;
-    background-color: var(--white); /* Explicit white background */
-    color: var(--text-color); /* Default text color */
+    background-color: var(--white);
+    color: var(--text-color);
     outline: none;
     outline-offset: 0;
-    transition: background-color 0.2s ease-in-out, border-color 0.2s ease-in-out, color 0.2s ease-in-out; /* Added color transition */
+    transition: background-color 0.2s ease-in-out, border-color 0.2s ease-in-out, color 0.2s ease-in-out, box-shadow 0.2s ease-in-out;
 }
 
-/* Style for disabled search inputs - Making them prettier! */
 .player-search-input:disabled {
-    background-color: #f0f0f0;
-    border-color: var(--medium-gray);
-    color: var(--dark-gray);
+    background-color: var(--input-disabled-bg);
+    border-color: var(--input-disabled-border);
+    color: var(--input-disabled-text);
     cursor: not-allowed;
     opacity: 0.75;
 }
 
 .search-results-container {
     position: absolute;
-    top: 100%; /* Position below the input cell */
+    top: 100%;
     left: 0;
-    width: 100%; /* Match width of the cell */
-    border: 1px solid #ccc;
-    background-color: #fff;
-    z-index: 10;
+    width: 100%;
+    border: 1px solid var(--border-color-medium);
+    background-color: var(--white);
+    z-index: var(--z-index-search-results);
     max-height: 200px;
     overflow-y: auto;
     box-shadow: 0 2px 5px rgba(0,0,0,0.15);
-    text-align: left; /* Align results text left */
-    display: none; /* Explicitly hide */
+    text-align: left;
+    display: none; /* Explicitly hide, shown via JS */
 }
 
-.player-option {
+/* Shared styles for old .player-option and new .search-result-item */
+.player-option,
+.search-result-item {
     padding: 5px 8px;
     cursor: pointer;
     font-size: 0.9em;
-    white-space: normal; /* Allow player names to wrap */
 }
 
-.player-option:last-child {
+.player-option:hover,
+.search-result-item:hover {
+    background-color: var(--border-color-light);
+}
+
+.player-option:last-child,
+.search-result-item:last-child {
     border-bottom: none;
 }
 
-.player-option:hover {
-    background-color: #eee; /* Consider a variable */
+/* Specific styles for search results with logos */
+.search-result-item {
+    display: flex;
+    align-items: center;
+    background-color: var(--white);
+    border-bottom: 1px solid var(--border-color-light);
+    white-space: normal; /* Allow wrapping */
 }
 
+.search-result-logo {
+    width: 20px;
+    height: 20px;
+    margin-right: 8px;
+    object-fit: contain;
+    vertical-align: middle; /* Helps alignment but flex handles primary alignment */
+    flex-shrink: 0; /* Prevent logo from shrinking */
+}
+
+/* Player Slot States */
 .player-slot.clickable-slot {
     cursor: pointer;
 }
 
 .player-slot.clickable-slot .player-search-input {
-    border: 1px solid #2a6aa8;
-    box-shadow: 0 0 0 1px #2a6aa8;
-    background-color: #fff;
+    border-color: var(--info-color);
+    box-shadow: 0 0 0 1px var(--info-color);
+    background-color: var(--white); /* Ensure background stays white */
 }
 
 .player-slot.filled-slot .player-search-input {
-    background-color: #f0f0f0; /* Grey out filled inputs */
-    border: 1px solid #28a745;
-    box-shadow: 0 0 0 1px #28a745;
+    background-color: var(--input-disabled-bg); /* Consistent disabled look */
+    border-color: var(--success-color);
+    box-shadow: 0 0 0 1px var(--success-color);
+    color: var(--text-color); /* Keep text readable */
 }
-
-/*
-.player-slot.empty-slot:not(.clickable-slot) .player-search-input {
-     border: 1px solid #ccc;
-}
-*/
-
 
 /* ==========================================================================
-   Settings Button (Top Right)
+   Player Name Cell & Team Logos
+   ========================================================================== */
+.player-name-cell {
+    position: relative; /* Context for search results */
+    text-align: left;
+    padding-left: 5px;
+    padding-right: 5px;
+}
+
+.team-logo {
+    width: 24px;
+    height: 24px;
+    margin-right: 8px;
+    vertical-align: middle;
+    object-fit: contain;
+}
+
+.picked-player-name {
+    display: inline-block;
+    vertical-align: middle;
+}
+
+/* ==========================================================================
+   Settings Button (Top Right Hamburger)
    ========================================================================== */
 .settings-btn {
-    position: absolute; /* Position relative to .draft-header */
+    position: absolute;
     top: 0;
     right: 0;
-    z-index: 100;
+    z-index: var(--z-index-settings-btn);
     width: 32px;
     height: 28px;
     border: 1px solid var(--border-color);
@@ -447,26 +513,30 @@ table tbody td:nth-child(1):not(.vertical-text) { /* Exclude the vertical text c
 .settings-btn::after {
     content: '';
     position: absolute;
-    left: 5px; /* Adjust for padding */
-    width: calc(100% - 10px); /* Adjust for padding */
+    left: 5px;
+    width: calc(100% - 10px);
     height: 2px;
     background-color: var(--dark-gray);
     border-radius: 1px;
     transition: background-color 0.2s ease-in-out;
 }
 
-/* Position the lines for hamburger icon */
 .settings-btn::before { top: 7px; }
 .settings-btn span { top: 50%; margin-top: -1px; display: block; }
 .settings-btn::after { bottom: 7px; }
 
-.settings-btn:hover { background-color: #eee; border-color: #aaa; }
+.settings-btn:hover {
+    background-color: var(--border-color-light);
+    border-color: var(--border-color-dark);
+}
 .settings-btn:hover span,
 .settings-btn:hover::before,
-.settings-btn:hover::after { background-color: var(--text-color); }
+.settings-btn:hover::after {
+    background-color: var(--text-color);
+}
 
 /* ==========================================================================
-   Overlay Styles (Settings, Table Names)
+   Overlay Styles (Settings, Table Names, Confirmation)
    ========================================================================== */
 .overlay {
     display: none; /* Hidden by default */
@@ -475,19 +545,19 @@ table tbody td:nth-child(1):not(.vertical-text) { /* Exclude the vertical text c
     left: 0;
     width: 100%;
     height: 100%;
-    background-color: rgba(0, 0, 0, 0.6); /* Slightly darker background */
-    z-index: 1000;
+    background-color: var(--overlay-bg);
+    z-index: var(--z-index-overlay);
     justify-content: center;
     align-items: center;
-    padding: var(--spacing-md); /* Add padding for smaller screens */
+    padding: var(--spacing-md);
     box-sizing: border-box;
 }
 
-.overlay.visible { /* Class added by JS to show */
+.overlay.visible {
     display: flex;
 }
 
-.overlay-content { /* Using overlay__content naming convention */
+.overlay-content {
     background-color: var(--white);
     padding: var(--spacing-lg);
     border-radius: var(--border-radius);
@@ -498,12 +568,12 @@ table tbody td:nth-child(1):not(.vertical-text) { /* Exclude the vertical text c
 }
 
 .overlay-content h2 {
-    margin-top: 0; /* Remove default top margin */
+    margin-top: 0;
     margin-bottom: var(--spacing-lg);
 }
 
 /* Input group styles within overlays */
-#settings-overlay .settings-input-group, /* Specificity if needed */
+#settings-overlay .settings-input-group,
 #table-names-input-container .settings-input-group {
     margin-bottom: var(--spacing-md);
     text-align: left;
@@ -516,6 +586,7 @@ table tbody td:nth-child(1):not(.vertical-text) { /* Exclude the vertical text c
     font-weight: bold;
 }
 
+/* Specific input style for table names overlay */
 #table-names-input-container input[type="text"] {
     width: 100%;
     padding: var(--spacing-sm);
@@ -525,32 +596,9 @@ table tbody td:nth-child(1):not(.vertical-text) { /* Exclude the vertical text c
     font-size: 1em;
 }
 
-#settings-overlay #exit-draft-button {
-    display: block; /* Make it block to center with margin auto */
-    margin: var(--spacing-lg) auto 0; /* Center horizontally */
-    width: fit-content; /* Size to content */
-}
-
-.overlay-buttons {
-    margin-top: var(--spacing-lg);
-    display: flex;
-    justify-content: center;
-    gap: var(--spacing-md);
-    flex-wrap: wrap; /* Allow buttons to wrap on small screens */
-}
-
-#exit-confirm-overlay .overlay-content {
-    text-align: center; /* Ensure text is centered */
-}
-
-#exit-confirm-overlay p {
-    margin-bottom: var(--spacing-lg); /* Add space above buttons */
-    color: var(--text-muted-color); /* Slightly muted text */
-}
-
-/* Style for info items within settings overlay */
+/* Settings Overlay Specifics */
 .settings-info-item {
-    background-color: #eee;
+    background-color: var(--border-color-light);
     padding: var(--spacing-sm);
     border-radius: var(--border-radius-sm);
     margin-bottom: var(--spacing-lg);
@@ -560,28 +608,26 @@ table tbody td:nth-child(1):not(.vertical-text) { /* Exclude the vertical text c
     word-wrap: break-word;
 }
 
-/* Make the room code container use flexbox */
 .settings-room-code-flex {
     display: flex;
     align-items: center;
-    justify-content: space-between; /* Puts space between text and button */
-    gap: var(--spacing-sm); /* Adds a small gap */
+    justify-content: space-between;
+    gap: var(--spacing-sm);
     padding-right: 5px; /* Adjust padding slightly for button */
 }
 
-/* Ensure the text span takes up available space */
 #settings-room-code-text {
     flex-grow: 1;
-    text-align: left; /* Align text left within its space */
+    text-align: left;
 }
 
-/* Style for the copy button */
 #copy-room-code-button {
-    padding: 4px 8px; /* Smaller padding */
-    font-size: 0.8em; /* Smaller font */
-    line-height: 1; /* Adjust line height for icon */
-    flex-shrink: 0; /* Prevent button from shrinking */
-    background-color: var(--medium-gray); /* Match other buttons */
+    padding: 4px 8px;
+    font-size: 0.8em;
+    line-height: 1;
+    flex-shrink: 0;
+    /* Uses .btn base styles + .btn-sm potentially */
+    background-color: var(--medium-gray);
     border: 1px solid var(--dark-gray);
 }
 #copy-room-code-button:hover {
@@ -590,39 +636,74 @@ table tbody td:nth-child(1):not(.vertical-text) { /* Exclude the vertical text c
      color: var(--white);
 }
 #copy-room-code-button svg {
-    vertical-align: middle; /* Align icon nicely */
+    vertical-align: middle;
 }
 
-/* Optional: Style for smaller buttons if btn-sm class is used */
-.btn-sm {
-    padding: 4px 8px;
-    font-size: 0.875em; /* Slightly smaller font */
-    border-radius: var(--border-radius-sm);
-}
-
-
-/* Hide the container if the text span inside is empty */
+/* Hide container if text span is empty (requires JS to empty the span) */
 #settings-room-code-container:has(#settings-room-code-text:empty) {
     display: none;
+}
+
+#settings-overlay #exit-draft-button {
+    display: block;
+    margin: var(--spacing-lg) auto 0;
+    width: fit-content;
+    /* Uses .btn and .btn-danger classes */
+}
+
+/* Table Names Overlay Specifics */
+#table-names-overlay .overlay-content {
+    max-width: 500px;
+}
+
+#table-names-input-container {
+    margin-bottom: var(--spacing-lg);
+    max-height: 60vh;
+    overflow-y: auto;
+    padding-right: var(--spacing-sm); /* Space for scrollbar */
+}
+
+/* Exit Confirmation Overlay Specifics */
+#exit-confirm-overlay .overlay-content {
+    text-align: center;
+}
+
+#exit-confirm-overlay p {
+    margin-bottom: var(--spacing-lg);
+    color: var(--text-muted-color);
+}
+
+/* General Overlay Buttons Container */
+.overlay-buttons {
+    margin-top: var(--spacing-lg);
+    display: flex;
+    justify-content: center;
+    gap: var(--spacing-md);
+    flex-wrap: wrap;
 }
 
 /* ==========================================================================
    Button Styles
    ========================================================================== */
-.btn { /* Basic button reset/defaults */
+.btn {
     cursor: pointer;
-    border: 1px solid transparent; /* Add border for consistency */
+    border: 1px solid transparent;
     border-radius: var(--border-radius);
     padding: var(--spacing-sm) var(--spacing-md);
     font-size: 1em;
     text-align: center;
     transition: background-color 0.2s ease, border-color 0.2s ease, color 0.2s ease, opacity 0.2s ease;
-    background-color: var(--medium-gray); /* Default background */
+    background-color: var(--medium-gray);
     color: var(--text-color);
+    line-height: 1.5; /* Default line height */
+    vertical-align: middle; /* Align inline buttons */
+    display: inline-flex; /* Helps align text/icons */
+    align-items: center;
+    justify-content: center;
 }
 .btn:hover {
-    background-color: #c8cfd6; /* Slightly darker gray */
-    border-color: #babbbc;
+    background-color: var(--medium-gray-hover);
+    border-color: var(--border-color-dark);
 }
 
 .btn-primary {
@@ -645,30 +726,44 @@ table tbody td:nth-child(1):not(.vertical-text) { /* Exclude the vertical text c
     border-color: var(--danger-hover-color);
 }
 
-
-.btn:disabled { /* General disabled style */
+.btn:disabled {
     cursor: not-allowed;
     opacity: 0.65;
 }
 
-/* Specific button adjustments */
+/* Button Size Variants */
+.btn-sm {
+    padding: 4px 8px;
+    font-size: 0.875em;
+    border-radius: var(--border-radius-sm);
+}
+
+/* Specific Button Overrides (if needed beyond classes) */
 #start-draft-button,
 #join-draft-button {
-    padding: 10px 20px; /* Slightly larger padding */
+    padding: 10px 20px;
     font-size: 1.1em;
     margin-top: var(--spacing-sm);
 }
 
 /* ==========================================================================
-   Table Names Overlay Specific Styles
+   Player Tooltip
    ========================================================================== */
-#table-names-overlay .overlay-content {
-    max-width: 500px;
+.player-tooltip {
+    background-color: var(--tooltip-bg);
+    color: var(--white);
+    padding: 8px 12px;
+    border-radius: var(--border-radius-sm); /* Use variable */
+    font-size: 0.9em;
+    white-space: nowrap;
+    box-shadow: 0 2px 5px rgba(0,0,0,0.3);
+    pointer-events: none; /* Important */
+    opacity: 0;
+    transition: opacity 0.1s ease-in-out;
+    position: absolute; /* Needed for positioning by JS */
+    z-index: calc(var(--z-index-search-results) + 1); /* Ensure it's above search results if overlapping */
 }
 
-#table-names-input-container {
-    margin-bottom: var(--spacing-lg);
-    max-height: 60vh; /* Limit height and allow scrolling */
-    overflow-y: auto;
-    padding-right: var(--spacing-sm); /* Space for scrollbar */
+.player-tooltip.visible {
+    opacity: 1;
 }

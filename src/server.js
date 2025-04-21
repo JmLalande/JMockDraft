@@ -13,17 +13,25 @@ const server = http.createServer(app);
 const io = new Server(server);
 
 const PORT = process.env.PORT || 3000;
+const ROOM_CLEANUP_DELAY_SHORT = 60 * 1000; // 1 minute in ms
+const ROOM_CLEANUP_DELAY_LONG = 24 * 60 * 60 * 1000; // 24 hours in ms
 
 // ==========================================================================
 // In-Memory State Management
 // ==========================================================================
-const draftRooms = new Map(); // Map<roomCode, draftState>
+// Stores the state for each active draft room.
+// Key: roomCode (string), Value: draftState (object)
+const draftRooms = new Map();
 
 // ==========================================================================
 // Utility Functions
 // ==========================================================================
 
-/** Generates a unique room code */
+/**
+ * Generates a unique room code consisting of uppercase letters and numbers.
+ * @param {number} [length=5] - The desired length of the room code.
+ * @returns {string} A unique room code.
+ */
 function generateRoomCode(length = 5) {
     const characters = 'ABCDEFGHIJKLMNPQRSTUVWXYZ123456789';
     let result = '';
@@ -32,73 +40,111 @@ function generateRoomCode(length = 5) {
         for (let i = 0; i < length; i++) {
             result += characters.charAt(Math.floor(Math.random() * characters.length));
         }
-    } while (draftRooms.has(result)); // Ensure uniqueness
+    } while (draftRooms.has(result)); // Ensure uniqueness against active rooms
     return result;
 }
 
-/** Calculates the next turn logic for a given room state */
+/**
+ * Calculates the next team to pick and the pick direction based on the current state.
+ * @param {object} currentState - The current state object for the draft room.
+ * @returns {{nextTableToPick: number, currentPickDirection: number}} - The index of the next team and the direction.
+ */
 function calculateNextTurn(currentState) {
-    // Basic validation of input state
+    // Validate essential settings
     if (!currentState?.settings?.numTables || currentState.settings.numTables <= 0 || !currentState.settings.playersPerPos) {
-        console.warn("calculateNextTurn called with invalid state/settings.");
-        return { nextTableToPick: 0, currentPickDirection: 1 }; // Default turn
+        console.warn("[calculateNextTurn] Invalid state/settings provided. Defaulting turn.", currentState?.settings);
+        return { nextTableToPick: 0, currentPickDirection: 1 }; // Default to first team, forward direction
     }
 
     const { numTables, playersPerPos, isSerpentineOrder } = currentState.settings;
     const currentPicks = currentState.picks || [];
-    let currentPickDirection = currentState.currentPickDirection ?? 1; // Default direction if missing
-    let lastActiveTableIndex = -1;
+    let currentPickDirection = currentState.currentPickDirection ?? 1; // Default to forward if missing
 
-    if (currentPicks.length > 0) {
-        lastActiveTableIndex = currentPicks[currentPicks.length - 1].tableId;
-    } else {
-        return { nextTableToPick: 0, currentPickDirection: 1 }; // First pick
+    // If no picks made yet, it's the first team's turn
+    if (currentPicks.length === 0) {
+        return { nextTableToPick: 0, currentPickDirection: 1 };
     }
 
-    // Calculate total slots
+    const lastPick = currentPicks[currentPicks.length - 1];
+    const lastActiveTableIndex = lastPick.teamId;
+
+    // Calculate total slots to determine draft completion
     const totalSlotsPerTable = Object.values(playersPerPos).reduce((sum, count) => sum + (count || 0), 0);
     const totalSlots = numTables * totalSlotsPerTable;
 
-    // Check for draft completion
+    // Check if draft is complete
     if (totalSlots > 0 && currentPicks.length >= totalSlots) {
-        return { nextTableToPick: -1, currentPickDirection }; // Draft complete
+        return { nextTableToPick: -1, currentPickDirection }; // Indicate draft completion
     }
 
-    // Determine if direction reverses (serpentine)
+    // Determine if the direction should reverse in serpentine drafts
     const isEndOfForwardRound = (currentPickDirection === 1 && lastActiveTableIndex === numTables - 1);
     const isEndOfBackwardRound = (currentPickDirection === -1 && lastActiveTableIndex === 0);
-    const isTurn = isSerpentineOrder && (isEndOfForwardRound || isEndOfBackwardRound);
+    const shouldReverseDirection = isSerpentineOrder && (isEndOfForwardRound || isEndOfBackwardRound);
 
     let nextTableToPick;
-    if (isTurn) {
+    if (shouldReverseDirection) {
         currentPickDirection *= -1; // Reverse direction
-        nextTableToPick = lastActiveTableIndex; // Same table picks again
+        nextTableToPick = lastActiveTableIndex; // Same team picks again at the turn
     } else {
-        // Move to the next table in the current direction, wrapping around
+        // Move to the next table in the current direction, wrapping if necessary
         nextTableToPick = (lastActiveTableIndex + currentPickDirection + numTables) % numTables;
     }
 
     return { nextTableToPick, currentPickDirection };
 }
 
+/**
+ * Prepares the room state for sending over Socket.IO (converts Sets to Arrays).
+ * @param {object} roomState - The internal room state object.
+ * @returns {object} A sanitized state object suitable for emission.
+ */
+function prepareStateForEmit(roomState) {
+    if (!roomState) return null;
+    return {
+        ...roomState,
+        selectedPlayerIds: Array.from(roomState.selectedPlayerIds || new Set()),
+        participants: Array.from(roomState.participants || new Set())
+    };
+}
+
+/**
+ * Schedules the removal of an empty draft room after a specified delay.
+ * @param {string} roomCode - The code of the room to potentially remove.
+ * @param {number} delay - The delay in milliseconds before removal.
+ */
+function scheduleEmptyRoomRemoval(roomCode, delay) {
+    setTimeout(() => {
+        const room = draftRooms.get(roomCode);
+        // Double-check if the room still exists and is still empty before deleting
+        if (room?.participants.size === 0) {
+            draftRooms.delete(roomCode);
+            console.log(`[Cleanup] Room ${roomCode} was empty and has been removed after delay.`);
+        } else {
+            console.log(`[Cleanup] Room ${roomCode} removal cancelled (no longer empty or deleted).`);
+        }
+    }, delay);
+}
+
+
 // ==========================================================================
 // Express Middleware & Routing
 // ==========================================================================
 
-// --- Calculate Paths ---
 const publicDirPath = path.join(__dirname, 'public');
 const indexHtmlPath = path.join(publicDirPath, 'index.html');
 
-// --- Serve Static Files ---
+// Serve static files (HTML, CSS, client-side JS)
 app.use(express.static(publicDirPath));
 
-// --- Handle Root Route ---
+// Serve the main index.html file for the root route
 app.get('/', (req, res) => {
   if (fs.existsSync(indexHtmlPath)) {
       res.sendFile(indexHtmlPath);
   } else {
+      // This is a critical error if the main file is missing
       console.error(`FATAL ERROR: index.html not found at ${indexHtmlPath}`);
-      res.status(404).send(`Error: Main application file not found.`);
+      res.status(500).send(`Server Configuration Error: Main application file not found.`);
   }
 });
 
@@ -106,105 +152,102 @@ app.get('/', (req, res) => {
 // Socket.IO Connection Handling
 // ==========================================================================
 io.on('connection', (socket) => {
-    console.log(`User connected: ${socket.id}`);
+    console.log(`[Connect] User connected: ${socket.id}`);
 
     // --- Draft Lifecycle Events ---
 
     socket.on('start_draft', (settings) => {
-        console.log(`[${socket.id}] Request to start draft:`, settings);
+        console.log(`[${socket.id}] Event: start_draft`, settings);
 
-        // Enhanced Validation
-        if (!settings || typeof settings.numTables !== 'number' || settings.numTables < 1 ||
-            !settings.playersPerPos || typeof settings.playersPerPos !== 'object' ||
-            typeof settings.maxSalary !== 'number' || settings.maxSalary < 0 ||
-            !settings.tableNames || typeof settings.tableNames !== 'object')
-        {
-            console.error(`[${socket.id}] Invalid draft settings received.`);
-            socket.emit('error', { message: "Invalid draft settings provided." });
-            return;
+        // --- Settings Validation ---
+        let validationError = null;
+        if (!settings || typeof settings !== 'object') {
+            validationError = "Invalid settings object provided.";
+        } else if (typeof settings.numTables !== 'number' || settings.numTables < 1) {
+            validationError = "Invalid number of teams provided.";
+        } else if (!settings.playersPerPos || typeof settings.playersPerPos !== 'object') {
+            validationError = "Invalid player position settings provided.";
+        } else if (typeof settings.maxSalary !== 'number' || settings.maxSalary < 0) {
+            validationError = "Invalid maximum salary provided.";
+        } else if (!settings.tableNames || typeof settings.tableNames !== 'object') {
+            validationError = "Invalid table names data provided.";
         }
-        // Ensure player counts are valid numbers >= 0
-        const positions = ['A', 'D', 'G'];
-        for (const pos of positions) {
-            if (typeof settings.playersPerPos[pos] !== 'number' || settings.playersPerPos[pos] < 0) {
-                 console.error(`[${socket.id}] Invalid player count for position ${pos}.`);
-                 socket.emit('error', { message: `Invalid player count for position ${pos}.` });
-                 return;
+
+        if (!validationError) {
+            const positions = ['F', 'D', 'G'];
+            for (const pos of positions) {
+                if (typeof settings.playersPerPos[pos] !== 'number' || settings.playersPerPos[pos] < 0) {
+                    validationError = `Invalid player count for position ${pos}.`;
+                    break;
+                }
+            }
+            if (!validationError && positions.reduce((sum, pos) => sum + (settings.playersPerPos[pos] || 0), 0) === 0) {
+                validationError = "Total players per team cannot be zero.";
             }
         }
-        if (positions.reduce((sum, pos) => sum + settings.playersPerPos[pos], 0) === 0) {
-             console.error(`[${socket.id}] Total players per table cannot be zero.`);
-             socket.emit('error', { message: "Total players per table cannot be zero." });
-             return;
-        }
 
+        if (validationError) {
+            console.error(`[${socket.id}] Start draft validation failed: ${validationError}`);
+            socket.emit('error', { message: validationError });
+            return;
+        }
+        // --- End Validation ---
 
         const roomCode = generateRoomCode();
         console.log(`[${socket.id}] Generated room code: ${roomCode}`);
 
         const newRoomState = {
-            settings: settings, // Already validated somewhat
+            settings: settings,
             picks: [],
             selectedPlayerIds: new Set(),
-            nextTableToPick: 0,
-            currentPickDirection: 1,
-            isSerpentineOrder: !!settings.isSerpentineOrder,
-            roomCode: roomCode, // Include code in state
-            participants: new Set([socket.id]) // Track participants
+            nextTableToPick: 0, // First team starts
+            currentPickDirection: 1, // Initial direction is forward
+            isSerpentineOrder: !!settings.isSerpentineOrder, // Ensure boolean
+            roomCode: roomCode,
+            participants: new Set([socket.id]) // Add creator as first participant
         };
 
         draftRooms.set(roomCode, newRoomState);
         socket.join(roomCode);
         console.log(`[${socket.id}] Created and joined room ${roomCode}`);
 
-        // Emit back to creator ONLY
-        const stateToSend = {
-            ...newRoomState,
-            selectedPlayerIds: [], // Send empty array initially
-            participants: Array.from(newRoomState.participants) // Send participants
-        };
+        // Emit 'draft_started' only to the creator with the initial state
+        const stateToSend = prepareStateForEmit(newRoomState);
         socket.emit('draft_started', { roomCode: roomCode, draftState: stateToSend });
     });
 
     socket.on('join_draft', ({ roomCode }) => {
         const upperRoomCode = roomCode?.trim().toUpperCase();
-        console.log(`[${socket.id}] Attempting to join room ${upperRoomCode}`);
+        console.log(`[${socket.id}] Event: join_draft attempt for room ${upperRoomCode}`);
 
         if (!upperRoomCode) {
+             console.warn(`[${socket.id}] Join failed: Invalid room code provided.`);
              socket.emit('join_error', { message: `Invalid room code provided.` });
              return;
         }
 
-        if (draftRooms.has(upperRoomCode)) {
-            const roomState = draftRooms.get(upperRoomCode);
-        
+        const roomState = draftRooms.get(upperRoomCode);
+
+        if (roomState) {
             socket.join(upperRoomCode);
-            roomState.participants.add(socket.id); // Add participant
-            console.log(`[${socket.id}] Successfully joined room ${upperRoomCode}`);
-        
-            // --- Step 1: Send the FULL state ONLY to the user who just joined ---
-            const fullStateToSend = {
-                ...roomState, // Copy all properties from roomState
-                // Convert Sets to Arrays for sending
-                selectedPlayerIds: Array.from(roomState.selectedPlayerIds),
-                participants: Array.from(roomState.participants)
-            };
-            // Use the existing 'draft_state_update' for the joining user
+            roomState.participants.add(socket.id); // Add new participant
+            console.log(`[${socket.id}] Successfully joined room ${upperRoomCode}. Participants: ${roomState.participants.size}`);
+
+            // Send the full current state ONLY to the newly joined user
+            const fullStateToSend = prepareStateForEmit(roomState);
             socket.emit('draft_state_update', { roomCode: upperRoomCode, draftState: fullStateToSend });
             console.log(`[${socket.id}] Emitted full state (draft_state_update) to joiner.`);
 
-
-            // --- Step 2: Send a MINIMAL update to OTHERS already in the room ---
+            // Send an update with just the new participant list to OTHERS already in the room
             const participantUpdatePayload = {
                 roomCode: upperRoomCode,
                 participants: Array.from(roomState.participants) // Send only the updated list
             };
-            // Emit to others in the room EXCEPT the sender
             socket.to(upperRoomCode).emit('participant_update', participantUpdatePayload);
             console.log(`[${socket.id}] Emitted participant_update to others in room ${upperRoomCode}.`);
 
         } else {
-            console.log(`[${socket.id}] Join failed: Room ${upperRoomCode} not found.`);
+            console.warn(`[${socket.id}] Join failed: Room ${upperRoomCode} not found.`);
             socket.emit('join_error', { message: `Draft room "${upperRoomCode}" not found.` });
         }
     });
@@ -212,196 +255,193 @@ io.on('connection', (socket) => {
     // --- In-Draft Actions ---
 
     socket.on('make_pick', ({ roomCode, pickData }) => {
-        console.log(`[${socket.id}] Pick received for room ${roomCode}:`, pickData);
+        console.log(`[${socket.id}] Event: make_pick for room ${roomCode}:`, pickData?.playerId);
         const roomState = draftRooms.get(roomCode);
 
-        // Validation
-        if (!roomState) return socket.emit('pick_error', { message: "Draft room not found." });
-        if (!pickData || typeof pickData.playerId !== 'number' || typeof pickData.tableId !== 'number') {
-            return socket.emit('pick_error', { message: "Invalid pick data format." });
-        }
-        if (pickData.tableId !== roomState.nextTableToPick) {
-            return socket.emit('pick_error', { message: `It's not Table ${pickData.tableId + 1}'s turn.` });
-        }
-        if (roomState.selectedPlayerIds.has(pickData.playerId)) {
-            return socket.emit('pick_error', { message: "Player already selected." });
-        }
-        const { position, tableId } = pickData; // Get position and tableId from pickData
-        const { playersPerPos } = roomState.settings; // Get position limits from settings
+        // --- Pick Validation ---
+        let validationError = null;
+        if (!roomState) {
+            validationError = "Draft room not found.";
+        } else if (!pickData || typeof pickData !== 'object') {
+            validationError = "Invalid pick data format.";
+        } else if (typeof pickData.playerId !== 'number' || typeof pickData.teamId !== 'number' ||
+                   typeof pickData.playerName !== 'string' || typeof pickData.salary !== 'number' ||
+                   typeof pickData.position !== 'string' || typeof pickData.team_url !== 'string') {
+            validationError = "Incomplete pick data received.";
+        } else if (pickData.teamId !== roomState.nextTableToPick) {
+            validationError = `It's not Team ${pickData.teamId + 1}'s turn.`;
+        } else if (roomState.selectedPlayerIds.has(pickData.playerId)) {
+            validationError = "Player already selected.";
+        } else {
+            const { position, teamId } = pickData;
+            const { playersPerPos, tableNames } = roomState.settings;
 
-        if (!position || !playersPerPos || playersPerPos[position] === undefined) {
-            console.error(`[Pick Error] Room ${roomCode}: Invalid position '${position}' in pickData or settings.`);
-            return socket.emit('pick_error', { message: `Invalid player position specified.` });
+            if (!['F', 'D', 'G'].includes(position) || !playersPerPos || playersPerPos[position] === undefined) {
+                validationError = `Invalid player position specified ('${position}').`;
+            } else {
+                const requiredCountForPos = playersPerPos[position];
+                const currentCountForPos = roomState.picks.filter(p => p.teamId === teamId && p.position === position).length;
+
+                if (currentCountForPos >= requiredCountForPos) {
+                    const teamName = tableNames[teamId] || `Team ${teamId + 1}`;
+                    validationError = `All ${position} slots are already filled for ${teamName}.`;
+                }
+            }
         }
 
-        const requiredCountForPos = playersPerPos[position];
-        const currentPicksForTable = roomState.picks.filter(p => p.tableId === tableId && p.position === position);
-        const currentCountForPos = currentPicksForTable.length;
-
-        console.log(`[Pick Validation] Room ${roomCode}, Table ${tableId}, Pos ${position}: Current ${currentCountForPos}, Required ${requiredCountForPos}`);
-
-        if (currentCountForPos >= requiredCountForPos) {
-            console.warn(`[Pick Error] Room ${roomCode}: Table ${tableId} already has ${currentCountForPos}/${requiredCountForPos} players for position ${position}.`);
-            return socket.emit('pick_error', { message: `All ${position} slots are already filled for ${roomState.settings.tableNames[tableId] || `Table ${tableId + 1}`}.` });
+        if (validationError) {
+            console.warn(`[Pick Error] Room ${roomCode}, User ${socket.id}: ${validationError}`);
+            socket.emit('pick_error', { message: validationError });
+            return;
         }
+        // --- End Validation ---
 
         // Process Pick
-        const newPicks = [...roomState.picks, pickData];
-        roomState.selectedPlayerIds.add(pickData.playerId);
-        roomState.picks = newPicks; // Update room state directly
+        const pickToStore = { // Ensure we only store expected fields
+            playerId: pickData.playerId,
+            playerName: pickData.playerName,
+            salary: pickData.salary,
+            position: pickData.position,
+            teamId: pickData.teamId,
+            team_url: pickData.team_url,
+            city: pickData.city || '' // Include city, default to empty string
+        };
+        roomState.picks.push(pickToStore); // Add to picks array
+        roomState.selectedPlayerIds.add(pickData.playerId); // Add to set for quick lookup
 
         // Calculate next turn
         const { nextTableToPick, currentPickDirection } = calculateNextTurn(roomState);
         roomState.nextTableToPick = nextTableToPick;
         roomState.currentPickDirection = currentPickDirection;
 
-        console.log(`[${roomCode}] Next turn: Table ${roomState.nextTableToPick}, Dir: ${roomState.currentPickDirection}`);
+        console.log(`[${roomCode}] Pick successful. Next turn: Team ${nextTableToPick}, Dir: ${currentPickDirection}`);
 
-        // Prepare state to broadcast
-        const stateToSend = {
-            ...roomState, // Includes settings, picks, turn info, roomCode
-            selectedPlayerIds: Array.from(roomState.selectedPlayerIds),
-            participants: Array.from(roomState.participants)
-        };
-
-        // Broadcast update to the room
+        // Broadcast updated state to the entire room
+        const stateToSend = prepareStateForEmit(roomState);
         io.to(roomCode).emit('draft_state_update', { roomCode: roomCode, draftState: stateToSend });
     });
 
     socket.on('undo_pick', ({ roomCode }) => {
-        console.log(`[${socket.id}] Undo request for room ${roomCode}`);
+        console.log(`[${socket.id}] Event: undo_pick for room ${roomCode}`);
         const roomState = draftRooms.get(roomCode);
 
-        if (!roomState) return socket.emit('error', { message: "Draft room not found." });
-        if (roomState.picks.length === 0) return socket.emit('error', { message: "No picks to undo." });
+        if (!roomState) {
+            console.warn(`[Undo Error] Room ${roomCode} not found.`);
+            return socket.emit('error', { message: "Draft room not found." });
+        }
+        if (roomState.picks.length === 0) {
+            console.warn(`[Undo Error] Room ${roomCode}: No picks to undo.`);
+            return socket.emit('error', { message: "No picks to undo." });
+        }
 
         // Process Undo
-        const lastPick = roomState.picks.pop(); // Mutates the array
+        const lastPick = roomState.picks.pop(); // Remove last pick from array
         if (lastPick) {
-            roomState.selectedPlayerIds.delete(lastPick.playerId);
-            console.log(`[${roomCode}] Undid pick: Player ID ${lastPick.playerId}`);
+            roomState.selectedPlayerIds.delete(lastPick.playerId); // Remove from selected set
+            console.log(`[${roomCode}] Undid pick for Player ID ${lastPick.playerId}`);
 
-            // Recalculate turn state
+            // Recalculate whose turn it is now
             const { nextTableToPick, currentPickDirection } = calculateNextTurn(roomState);
             roomState.nextTableToPick = nextTableToPick;
             roomState.currentPickDirection = currentPickDirection;
+            console.log(`[${roomCode}] State after undo: Next turn Team ${nextTableToPick}`);
 
-            console.log(`[${roomCode}] State after undo: Next turn Table ${roomState.nextTableToPick}`);
-
-            // Prepare and broadcast updated state
-            const stateToSend = {
-                ...roomState,
-                selectedPlayerIds: Array.from(roomState.selectedPlayerIds),
-                 participants: Array.from(roomState.participants)
-            };
+            // Broadcast updated state
+            const stateToSend = prepareStateForEmit(roomState);
             io.to(roomCode).emit('draft_state_update', { roomCode: roomCode, draftState: stateToSend });
 
         } else {
-             console.error(`[${roomCode}] Undo failed: Popped pick was undefined.`);
+             // Should not happen if picks.length > 0 check passed, but good to log
+             console.error(`[${roomCode}] Undo failed unexpectedly: Popped pick was undefined.`);
              socket.emit('error', { message: "Undo failed unexpectedly." });
         }
    });
 
-    socket.on('update_table_name', ({ roomCode, tableId, newName }) => {
-        console.log(`[${socket.id}] Table name update for room ${roomCode}: Table ${tableId} -> ${newName}`);
+    socket.on('update_table_name', ({ roomCode, teamId, newName }) => {
+        console.log(`[${socket.id}] Event: update_table_name for room ${roomCode}: Team ${teamId} -> "${newName}"`);
         const roomState = draftRooms.get(roomCode);
 
         // Validation
-        if (!roomState?.settings?.tableNames) return socket.emit('error', { message: "Draft room or settings not found." });
-        if (typeof tableId !== 'number' || tableId < 0 || tableId >= roomState.settings.numTables || typeof newName !== 'string') {
-            return socket.emit('error', { message: "Invalid table name update request." });
+        if (!roomState?.settings?.tableNames) {
+            console.warn(`[Name Update Error] Room ${roomCode} or settings not found.`);
+            return socket.emit('error', { message: "Draft room or settings not found." });
+        }
+        if (typeof teamId !== 'number' || teamId < 0 || teamId >= roomState.settings.numTables || typeof newName !== 'string') {
+            console.warn(`[Name Update Error] Invalid data: teamId=${teamId}, newName type=${typeof newName}`);
+            return socket.emit('error', { message: "Invalid table name update request data." });
         }
 
         // Process Update
-        const finalName = newName.trim() || `Table ${tableId + 1}`; // Use default if empty
-        roomState.settings.tableNames[tableId] = finalName;
+        const finalName = newName.trim() || `Team ${teamId + 1}`; // Use default if empty/whitespace
+        roomState.settings.tableNames[teamId] = finalName;
+        console.log(`[${roomCode}] Team ${teamId} name updated to "${finalName}"`);
 
-        // Prepare and broadcast update (only need to send settings part if optimized)
-        const stateToSend = {
-            ...roomState,
-            selectedPlayerIds: Array.from(roomState.selectedPlayerIds),
-            participants: Array.from(roomState.participants)
-        };
+        // Broadcast the full state update (simplest approach)
+        const stateToSend = prepareStateForEmit(roomState);
         io.to(roomCode).emit('draft_state_update', { roomCode: roomCode, draftState: stateToSend });
     });
 
-    // --- Disconnection Handling ---
+    // --- Disconnection & Leaving ---
+
+    /** Handles cleanup when a socket disconnects or explicitly leaves a room. */
+    function handleLeaveOrDisconnect(leavingSocketId, roomCode) {
+        const roomState = draftRooms.get(roomCode);
+        if (!roomState || !roomState.participants.has(leavingSocketId)) {
+            // Socket wasn't in this room's participant list, nothing to do for this room
+            return;
+        }
+
+        // Remove participant
+        roomState.participants.delete(leavingSocketId);
+        console.log(`[${leavingSocketId}] Removed from participants list for room ${roomCode}. Remaining: ${roomState.participants.size}`);
+
+        // Check if room is now empty
+        if (roomState.participants.size === 0) {
+            console.log(`[Cleanup] Room ${roomCode} is now empty.`);
+            // Schedule removal after a delay (longer delay for explicit leave vs disconnect)
+            const delay = (leavingSocketId === socket.id) ? ROOM_CLEANUP_DELAY_LONG : ROOM_CLEANUP_DELAY_SHORT;
+            scheduleEmptyRoomRemoval(roomCode, delay);
+        } else {
+            // Notify remaining participants about the change
+            const participantUpdatePayload = {
+                roomCode: roomCode,
+                participants: Array.from(roomState.participants)
+            };
+            // Use io.to() because the leaving socket might already be disconnected
+            io.to(roomCode).emit('participant_update', participantUpdatePayload);
+            console.log(`[${leavingSocketId}] Emitted participant_update to remaining users in room ${roomCode}.`);
+        }
+    }
 
     socket.on('disconnect', (reason) => {
-        console.log(`User disconnected: ${socket.id}, Reason: ${reason}`);
-        // Basic Room Cleanup (Optional but recommended)
+        console.log(`[Disconnect] User disconnected: ${socket.id}, Reason: ${reason}`);
+        // Iterate through all rooms the user might have been in
         draftRooms.forEach((roomState, roomCode) => {
-            if (roomState.participants.has(socket.id)) {
-                roomState.participants.delete(socket.id);
-                console.log(`[${socket.id}] Removed from room ${roomCode}`);
-
-                // If room is now empty, remove it after a delay (or immediately)
-                if (roomState.participants.size === 0) {
-                    // Delay removal slightly in case of quick reconnects? Or remove immediately.
-                    setTimeout(() => {
-                        // Double check size before deleting
-                        if (draftRooms.get(roomCode)?.participants.size === 0) {
-                            draftRooms.delete(roomCode);
-                            console.log(`Room ${roomCode} is empty and has been removed.`);
-                        }
-                    }, 60000); // Remove after 1 minute of being empty
-                } else {
-                    // Notify remaining participants
-                    const notificationData = { roomCode: roomCode, draftState: { participants: Array.from(roomState.participants) } };
-                    io.to(roomCode).emit('draft_state_update', notificationData);
-                }
-            }
+            handleLeaveOrDisconnect(socket.id, roomCode);
         });
     });
 
-    // --- Handles leaving the draft room ---
     socket.on('leave_draft', ({ roomCode }) => {
         const upperRoomCode = roomCode?.trim().toUpperCase();
-        console.log(`[${socket.id}] Request to leave room ${upperRoomCode}`);
+        console.log(`[${socket.id}] Event: leave_draft request for room ${upperRoomCode}`);
 
         if (!upperRoomCode) {
             console.warn(`[${socket.id}] Invalid room code provided for leave_draft.`);
-            return;
+            return; // No error emit needed, just ignore invalid request
         }
 
         const roomState = draftRooms.get(upperRoomCode);
 
         if (roomState && roomState.participants.has(socket.id)) {
-            // 1. Remove from participants Set
-            roomState.participants.delete(socket.id);
-            console.log(`[${socket.id}] Removed from participants list for room ${upperRoomCode}.`);
-
-            // 2. Remove socket from the Socket.IO room (stops broadcasts to this socket for this room)
+            // Leave the Socket.IO room first
             socket.leave(upperRoomCode);
             console.log(`[${socket.id}] Left Socket.IO room ${upperRoomCode}.`);
-
-            // 3. Notify remaining participants
-            if (roomState.participants.size > 0) {
-                const participantUpdatePayload = {
-                    roomCode: upperRoomCode,
-                    participants: Array.from(roomState.participants)
-                };
-
-                io.to(upperRoomCode).emit('participant_update', participantUpdatePayload);
-                console.log(`[${socket.id}] Emitted participant_update to remaining users in room ${upperRoomCode}.`);
-            } else {
-                 // Cleanup if room is now empty (similar to disconnect logic)
-                 console.log(`Room ${upperRoomCode} is now empty after user left.`);
-
-                 setTimeout(() => {
-                    if (draftRooms.get(upperRoomCode)?.participants.size === 0) {
-                        draftRooms.delete(upperRoomCode);
-                        console.log(`Room ${upperRoomCode} is empty and has been removed after user left.`);
-                    }
-                 }, 86400000); // Remove after 24 hours of being empty
-            }
-
-        } else if (roomState) {
-            console.warn(`[${socket.id}] Tried to leave room ${upperRoomCode}, but was not listed as a participant.`);
-            // Still try to leave the Socket.IO room just in case state is inconsistent
-            socket.leave(upperRoomCode);
+            // Then handle participant list update and potential cleanup
+            handleLeaveOrDisconnect(socket.id, upperRoomCode);
         } else {
-            console.warn(`[${socket.id}] Tried to leave non-existent room ${upperRoomCode}.`);
+            console.warn(`[${socket.id}] Tried to leave room ${upperRoomCode}, but was not found or not a participant.`);
+            // Attempt to leave the Socket.IO room anyway, in case of inconsistent state
+            socket.leave(upperRoomCode);
         }
     });
 });
@@ -410,5 +450,5 @@ io.on('connection', (socket) => {
 // Start Server
 // ==========================================================================
 server.listen(PORT, () => {
-  console.log(`Server listening on *:${PORT}`);
+  console.log(`[Server] Listening on port ${PORT}`);
 });
