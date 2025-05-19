@@ -58253,6 +58253,11 @@ playersIndex.sort((a, b) => {
   return nameA.localeCompare(nameB);
 });
 
+/** Helper function to remove accents and convert to lowercase. */
+function normalizeNameForSearch(str) {
+  if (typeof str !== 'string') return '';
+  return str.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+}
 
 /**
  * Filters a list of players based on a search term.
@@ -58264,33 +58269,28 @@ playersIndex.sort((a, b) => {
 export function searchPlayers(searchTerm, playersList) {
   // Return a copy of the original list if search term is empty or too short
   if (!searchTerm || searchTerm.trim().length === 0) {
-      return [...playersList]; // Return a copy to avoid modifying the original if needed elsewhere
+      return [...playersList];
   }
-
-  const lowerSearchTerm = searchTerm.trim().toLowerCase();
+  
+  const normalizedSearchTerm = normalizeNameForSearch(searchTerm.trim());
 
   return playersList.filter(player => {
       if (!player || typeof player.name !== 'string') {
           return false; // Skip players without valid names
       }
 
-      const fullName = player.name.toLowerCase();
-      const nameParts = fullName.split(' ').filter(part => part.length > 0); // Split and remove empty parts
+      const normalizedFullName = normalizeNameForSearch(player.name);
+
+      const nameParts = normalizedFullName.split(' ').filter(part => part.length > 0); // Split and remove empty parts
 
       if (nameParts.length === 0) {
           return false; // Skip if name splits into nothing
       }
 
-      const firstName = nameParts[0];
-      // Handle cases with middle names - always take the last part as the last name
-      const lastName = nameParts.length > 1 ? nameParts[nameParts.length - 1] : '';
+      // Check if any part of the normalized full name starts with the normalized search term
+      const matchesAnyNamePart = nameParts.some(part => part.startsWith(normalizedSearchTerm));
 
-      // Check if the lowerSearchTerm matches the beginning of the first OR last name
-      const matchesFirstName = firstName.startsWith(lowerSearchTerm);
-      // Ensure lastName exists before checking startsWith
-      const matchesLastName = lastName && lastName.startsWith(lowerSearchTerm);
-
-      return matchesFirstName || matchesLastName;
+      return matchesAnyNamePart;
   });
 }
 

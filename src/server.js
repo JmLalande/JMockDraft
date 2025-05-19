@@ -33,7 +33,7 @@ const draftRooms = new Map();
  * @returns {string} A unique room code.
  */
 function generateRoomCode(length = 5) {
-    const characters = 'ABCDEFGHIJKLMNPQRSTUVWXYZ123456789';
+    const characters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ123456789';
     let result = '';
     do {
         result = ''; // Reset in case of collision
@@ -132,7 +132,6 @@ function scheduleEmptyRoomRemoval(roomCode, delay) {
 // ==========================================================================
 
 const publicDirPath = path.join(__dirname, 'public');
-//const indexHtmlPath = path.join(publicDirPath, 'index.html');
 
 // Serve static files (HTML, CSS, client-side JS)
 app.use(express.static(publicDirPath));

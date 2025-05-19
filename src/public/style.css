@@ -46,12 +46,23 @@
     --spacing-sm: 0.5rem;
     --spacing-md: 1rem;
     --spacing-lg: 1.5rem;
+    --table-row-height: 40px;
+    --vertical-caption-width: 60px;
 
     /* Z-Indexes */
     --z-index-search-results: 10;
     --z-index-settings-btn: 100;
     --z-index-overlay: 1000;
     --z-index-loading: 9999;
+
+    /* Heights for vertical label positioning */
+    --caption-font-size: 1.2em;
+    --caption-total-height: calc(var(--caption-font-size) + (2 * var(--spacing-md)));
+    --row-total-height: calc(var(--table-row-height) + (2 * var(--spacing-sm)) + 1px);
+    --vertical-label-total-height: calc(((var(--row-total-height)) * var(--vertical-label-row-multiplier)) + 1px);
+    --second-vertical-label-total-height: calc(((var(--row-total-height)) * var(--second-vertical-label-row-multiplier)));
+    --third-vertical-label-total-height: calc(((var(--row-total-height)) * var(--third-vertical-label-row-multiplier)));
+
 }
 
 /* ==========================================================================
@@ -267,7 +278,6 @@ body.is-rejoining #loading-indicator {
 }
 
 .draft-controls button#undo-button svg {
-    vertical-align: middle;
     display: block;
 }
 
@@ -280,7 +290,10 @@ body.is-rejoining #loading-indicator {
     max-width: 1400px;
     margin: 0 auto;
     overflow-x: auto;
-    padding-bottom: var(--spacing-lg); /* Space for scrollbar */
+    padding-top: var(--spacing-lg);
+    padding-left: var(--spacing-lg);
+    padding-right: var(--spacing-lg);
+    padding-bottom: var(--spacing-lg);
 }
 
 .table-wrapper {
@@ -289,6 +302,7 @@ body.is-rejoining #loading-indicator {
     width: auto; /* Let content determine width */
     min-width: 300px; /* Minimum width for readability */
     flex-shrink: 0;
+    position: relative;
 }
 
 /* ==========================================================================
@@ -298,8 +312,9 @@ table {
     border-collapse: collapse;
     margin-bottom: var(--spacing-lg);
     text-align: center;
-    width: 100%;
     border: 2px solid var(--black);
+    table-layout: fixed;
+    position: relative;
 }
 
 th,
@@ -308,6 +323,9 @@ td {
     padding: var(--spacing-sm);
     position: relative; /* Context for search results, tooltips */
     vertical-align: middle;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    height: var(--table-row-height);
 }
 
 th {
@@ -316,45 +334,86 @@ th {
     font-weight: bold;
 }
 
-.table-header {
+caption.table-caption {
+    caption-side: top;
     background-color: var(--table-header-bg);
     color: var(--white);
     font-weight: bold;
+    font-size: var(--caption-font-size);
+    padding: var(--spacing-md);
+    text-align: center;
+    border: 1px solid var(--table-header-bg);
+    border-bottom: none;
+}
+
+.vertical-table-label-base {
+    /* Common visual properties */
+    color: var(--black);
+    font-weight: bold;
     font-size: 1.2em;
-}
-.table-header td {
-    border-color: var(--table-header-bg); /* Match background */
+    text-align: center;
+    overflow: hidden;
+
+    /* Common positioning and layout */
+    position: absolute;
+    left: 0;
+    width: var(--vertical-caption-width);
+    z-index: 2; /* Ensure it's above table cells */
+
+    /* Vertical text rendering */
+    writing-mode: vertical-rl;
+    transform: rotate(180deg);
+
+    /* Flex properties for when display is set to flex */
+    display: none; /* Initially hidden, shown by JS */
+    align-items: center;
+    justify-content: center;
+
+    /* Common sizing and spacing */
+    padding: var(--spacing-sm) 0;
+    box-sizing: border-box;
+
+    /* Common border styles */
+    border: 0.5px solid var(--dark-gray);
+    border-right: 1px solid;
 }
 
-/* Column Widths */
-table thead th:nth-child(2),
-table tbody td:nth-child(2) {
-    width: 55%;
+.vertical-table-label {
+    background-color: var(--pos-f-bg);
+
+    /* --- Vertical Styling & Positioning --- */
+    top: calc(var(--caption-total-height) + var(--row-total-height));
+    height: var(--vertical-label-total-height);
+
+    /* --- Borders --- */
+    border-bottom: 1.5px solid;
+    border-bottom-color: var(--dark-gray);
 }
 
-table thead th:nth-child(3),
-table tbody td:nth-child(3) {
-    width: 35%;
+.vertical-table-label-second {
+    background-color: var(--pos-d-bg);
+
+    /* --- Vertical Styling & Positioning --- */
+    top: calc(var(--caption-total-height) + var(--row-total-height) + var(--vertical-label-total-height));
+    height: var(--second-vertical-label-total-height);
 }
 
-table thead th:nth-child(1),
-table tbody td:nth-child(1):not(.vertical-text) {
-    width: 10%;
+.vertical-table-label-third {
+    background-color: var(--pos-g-bg);
+
+    /* --- Vertical Styling & Positioning --- */
+    top: calc(var(--caption-total-height) + var(--row-total-height) + var(--vertical-label-total-height) + var(--second-vertical-label-total-height));
+    height: var(--third-vertical-label-total-height);
 }
 
 /* Position Background Colors */
-.F, .vertical-F { background-color: var(--pos-f-bg); }
-.D, .vertical-D { background-color: var(--pos-d-bg); }
-.G, .vertical-G { background-color: var(--pos-g-bg); }
+tr.F { background-color: var(--pos-f-bg); }
+tr.D { background-color: var(--pos-d-bg); }
+tr.G { background-color: var(--pos-g-bg); }
 
-.vertical-text {
-    writing-mode: vertical-rl;
-    text-orientation: mixed;
-    white-space: nowrap;
-    padding: var(--spacing-sm) 0;
+.position-abbreviation-cell {
     font-weight: bold;
     text-align: center;
-    transform: rotate(180deg);
 }
 
 .total-row {
@@ -365,9 +424,40 @@ table tbody td:nth-child(1):not(.vertical-text) {
     border-top: 2px solid var(--black);
 }
 
+.table-wrapper.active-table table {
+    box-shadow: 0 0 20px 4px rgba(13, 110, 253, 0.5);
+}
+
+.table-wrapper.active-table table caption.table-caption {
+    box-shadow: 0 0 20px 4px rgba(13, 110, 253, 0.5);
+}
+
 .total-salary-cell.is-over-cap {
     color: var(--danger-color);
     font-weight: bold;
+}
+
+.padlock-icon {
+    position: absolute;
+    top: 8px;
+    right: 10px;
+    width: 20px;
+    height: 20px;
+    display: none;
+    z-index: 5;
+    cursor: pointer;
+}
+
+.padlock-icon[data-locked="false"] {
+    opacity: 0.9;
+  }
+
+.padlock-icon[data-locked="true"] {
+    filter: drop-shadow(0 0 3px rgba(200, 200, 200, 0.7)) drop-shadow(0 0 5px rgba(200, 200, 200, 0.5));
+}
+
+.table-wrapper.active-table .padlock-icon {
+    display: block;
 }
 
 /* ==========================================================================
@@ -446,6 +536,35 @@ table tbody td:nth-child(1):not(.vertical-text) {
     flex-shrink: 0; /* Prevent logo from shrinking */
 }
 
+/* Styling for picked players in search results */
+.search-result-item.search-result-item-picked {
+    color: var(--input-disabled-text);
+    cursor: not-allowed;
+    background-color: var(--input-disabled-bg); /* Ensure background doesn't change on hover like others */
+}
+
+.search-result-item.search-result-item-picked:hover {
+    background-color: var(--input-disabled-bg); /* Explicitly keep background white on hover */
+}
+.search-result-item.search-result-item-picked .search-result-logo {
+    opacity: 0.5; /* Dim the logo for picked players */
+}
+
+/* Styling for players that would exceed cap in search results */
+.search-result-item.search-result-item-over-cap {
+    color: var(--danger-color);
+    cursor: not-allowed;
+    background-color: #fceded;
+}
+
+.search-result-item.search-result-item-over-cap:hover {
+    background-color: #f9e0e0;
+    color: var(--danger-hover-color);
+}
+.search-result-item.search-result-item-over-cap .search-result-logo {
+    opacity: 0.4;
+}
+
 /* Player Slot States */
 .player-slot.clickable-slot {
     cursor: pointer;
@@ -472,6 +591,7 @@ table tbody td:nth-child(1):not(.vertical-text) {
     text-align: left;
     padding-left: 5px;
     padding-right: 5px;
+    overflow:visible !important;
 }
 
 .team-logo {

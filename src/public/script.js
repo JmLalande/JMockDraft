@@ -54,6 +54,9 @@ document.addEventListener("DOMContentLoaded", () => {
     const tableNamesOverlay = document.getElementById("table-names-overlay");
     const tableNamesInputContainer = document.getElementById("table-names-input-container");
     const exitConfirmOverlay = document.getElementById('exit-confirm-overlay');
+    // --- Padlock Icon URLs (PNGs) ---
+    const PNG_PADLOCK_UNLOCKED = `https://img.icons8.com/?size=100&id=2EpwWHoO8HUY&format=png&color=FFFFFF`;
+    const PNG_PADLOCK_LOCKED = `https://img.icons8.com/?size=100&id=NIcB9abivYMw&format=png&color=FFFFFF`;
 
     // ==========================================================================
     // Initial Setup & Rejoin Logic
@@ -126,18 +129,13 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     /** Filters local playersIndex for available players by position, excluding selected ones. */
-    function getAvailablePlayers(position, serverSelectedPlayerIds) {
+    function getAvailablePlayers(position) {
         if (!Array.isArray(playersIndex)) {
             console.error("playersIndex is not loaded or not an array.");
             return [];
         }
-        // Ensure serverSelectedPlayerIds is a Set for efficient lookup
-        const selectedIds = serverSelectedPlayerIds instanceof Set
-            ? serverSelectedPlayerIds
-            : new Set(serverSelectedPlayerIds || []);
-
         return playersIndex.filter(player =>
-            player.position === position && !selectedIds.has(player.id)
+            player.position === position
         );
     }
 
@@ -176,6 +174,64 @@ document.addEventListener("DOMContentLoaded", () => {
             });
         }
         return mappedPicks;
+    }
+
+    // ==========================================================================
+    // Column Width Uniformity Function
+    // ==========================================================================
+    /**
+     * Ensures that all columns in all draft tables have the same width,
+     * based on the maximum width required for each column index.
+     */
+    function uniformizeColumnWidths() {
+        const tablesContainerElem = document.getElementById('tables-container');
+        if (!tablesContainerElem) return; // Ensure the container exists
+
+        const tables = tablesContainerElem.querySelectorAll('table');
+        if (!tables.length) return;
+
+        // Determine the number of columns from the colgroup of the first table
+        const firstTableColGroup = tables[0].querySelector('colgroup');
+        if (!firstTableColGroup) {
+            // console.warn("[uniformizeColumnWidths] The first table does not have a <colgroup>.");
+            return;
+        }
+        const colElementsInFirstTable = firstTableColGroup.querySelectorAll('col');
+        if (!colElementsInFirstTable.length) {
+            // console.warn("[uniformizeColumnWidths] The <colgroup> of the first table has no <col> elements.");
+            return;
+        }
+        const nbCols = colElementsInFirstTable.length;
+        const maxWidths = Array(nbCols).fill(0);
+
+        // 1) Measure the effective width of each <col> for visible tables.
+        tables.forEach(table => {
+            if (table.offsetParent === null) { // Check if the table is visible
+                // console.log("[uniformizeColumnWidths] Table not visible, ignored for measurement:", table);
+                return; // Ignore non-visible tables
+            }
+            const cols = table.querySelectorAll('colgroup col');
+            // Iterate up to nbCols and ensure the column exists
+            for (let i = 0; i < nbCols; i++) {
+                if (cols[i]) {
+                    const w = cols[i].getBoundingClientRect().width;
+                    if (w > maxWidths[i]) {
+                        maxWidths[i] = w;
+                    }
+                }
+            }
+        });
+
+        // 2) Apply the maximum width to all <col> elements in each table.
+        tables.forEach(table => {
+            const cols = table.querySelectorAll('colgroup col');
+            for (let i = 0; i < nbCols; i++) {
+                if (cols[i] && maxWidths[i] > 0) { // Apply only if a positive max width was found
+                    cols[i].style.width = `${maxWidths[i]}px`;
+                }
+            }
+        });
+        // console.log("[uniformizeColumnWidths] Maximum widths applied:", maxWidths);
     }
 
     // ==========================================================================
@@ -286,10 +342,43 @@ document.addEventListener("DOMContentLoaded", () => {
 
         if (!roomState || !roomState.settings) {
             console.warn("[Render] Invalid state received, showing start screen.");
+            document.documentElement.style.removeProperty('--vertical-label-row-multiplier');
+            document.documentElement.style.removeProperty('--second-vertical-label-row-multiplier');
             showStartScreen(); // Revert to start if state is invalid
             return;
         }
         currentServerState = roomState; // Update the global state reference
+
+        // Update CSS variable for vertical label height multiplier
+        if (currentServerState.settings.playersPerPos) {
+            const { F: numForwards, D: numDefenders, G: numGoaltenders } = currentServerState.settings.playersPerPos;
+
+            // Handle Forwards multiplier
+            if (typeof numForwards === 'number' && numForwards >= 0) {
+                document.documentElement.style.setProperty('--vertical-label-row-multiplier', numForwards);
+            } else {
+                document.documentElement.style.removeProperty('--vertical-label-row-multiplier');
+            }
+
+            // Handle Defenders multiplier
+            if (typeof numDefenders === 'number' && numDefenders >= 0) {
+                document.documentElement.style.setProperty('--second-vertical-label-row-multiplier', numDefenders);
+            } else {
+                document.documentElement.style.removeProperty('--second-vertical-label-row-multiplier');
+            }
+
+            // Handle Goaltenders multiplier
+            if (typeof numGoaltenders === 'number' && numGoaltenders >= 0) {
+                document.documentElement.style.setProperty('--third-vertical-label-row-multiplier', numGoaltenders);
+            } else {
+                document.documentElement.style.removeProperty('--third-vertical-label-row-multiplier');
+            }
+        } else {
+            // If playersPerPos itself isn't available, remove both properties.
+            document.documentElement.style.removeProperty('--vertical-label-row-multiplier');
+            document.documentElement.style.removeProperty('--second-vertical-label-row-multiplier');
+            document.documentElement.style.removeProperty('--third-vertical-label-row-multiplier');
+        }
 
         // --- Clear Rejoin State & Update UI Visibility ---
         document.body.classList.remove('is-rejoining');
@@ -309,6 +398,28 @@ document.addEventListener("DOMContentLoaded", () => {
 
         // --- Regenerate Draft Tables & Enable Inputs ---
         generateTablesFromServerState(currentServerState);
+        
+        // --- Control visibility of vertical labels AFTER they are created ---
+        if (tablesContainer && currentServerState.settings.playersPerPos) {
+            const { F: numForwards, D: numDefenders, G: numGoaltenders } = currentServerState.settings.playersPerPos;
+
+            tablesContainer.querySelectorAll('.vertical-table-label').forEach(label => {
+                label.style.display = (typeof numForwards === 'number' && numForwards > 0) ? 'flex' : 'none';
+            });
+            tablesContainer.querySelectorAll('.vertical-table-label-second').forEach(label => {
+                label.style.display = (typeof numDefenders === 'number' && numDefenders > 0) ? 'flex' : 'none';
+            });
+            tablesContainer.querySelectorAll('.vertical-table-label-third').forEach(label => {
+                label.style.display = (typeof numGoaltenders === 'number' && numGoaltenders > 0) ? 'flex' : 'none';
+            });
+        } else if (tablesContainer) { // If playersPerPos is missing or no tablesContainer, hide all
+            tablesContainer.querySelectorAll(
+                '.vertical-table-label, .vertical-table-label-second, .vertical-table-label-third'
+            ).forEach(label => {
+                label.style.display = 'none';
+            });
+        }
+
         enableInputsFromServerState(currentServerState); // Enable inputs AFTER tables are generated
     }
 
@@ -321,12 +432,19 @@ document.addEventListener("DOMContentLoaded", () => {
         const { numTables, tableNames, playersPerPos, maxSalary } = roomState.settings;
         const validPlayersPerPos = playersPerPos || {};
         const activePositions = Object.keys(validPlayersPerPos).filter(pos => validPlayersPerPos[pos] > 0);
-        const picksForState = roomState.picks || []; // Ensure picks is an array
+        const picksForState = roomState.picks || [];
 
         if (numTables < 1 || activePositions.length === 0) {
             console.error("[Generate Tables] Invalid settings (numTables or playersPerPos).");
             return;
         }
+
+        // --- Fixed column widths ---
+        const colWidths = [
+            '60px',  // Col 1 (Pos)
+            '250px', // Col 2 (Name)
+            '140px'  // Col 3 (Salary)
+        ];
 
         for (let i = 0; i < numTables; i++) {
             const tableWrapper = document.createElement("div");
@@ -334,96 +452,145 @@ document.addEventListener("DOMContentLoaded", () => {
 
             const table = document.createElement("table");
             table.dataset.teamId = i;
-            const currentTableName = tableNames[i] || `Team ${i + 1}`; // Use Team as default
+            const currentTableName = tableNames[i] || `Team ${i + 1}`;
 
-            // Create table structure (using template literal for readability)
-            table.innerHTML = `
-                <thead>
-                    <tr class="table-header">
-                        <td colspan="3" contenteditable="true" spellcheck="false">${currentTableName}</td>
-                    </tr>
-                    <tr>
-                        <th>Pos</th>
-                        <th>Player Name</th>
-                        <th>Salary</th>
-                    </tr>
-                </thead>
-                <tbody></tbody>
-            `;
-            const tbody = table.querySelector("tbody");
+            // --- 1. Add Caption for Team Name ---
+            const caption = table.createCaption();
+            caption.classList.add('table-caption');
+            caption.contentEditable = "true";
+            caption.spellcheck = false;
+            caption.textContent = currentTableName;
+            // Add listener for table name editing
+            caption.addEventListener('blur', handleTableNameEdit);
+            caption.addEventListener('keydown', handleTableNameKeydown);
 
-            // Filter picks specifically for this table once
+            const verticalLabel = document.createElement("div");
+            verticalLabel.classList.add("vertical-table-label-base", "vertical-table-label");
+            verticalLabel.textContent = "Forwards";
+            table.appendChild(verticalLabel);
+
+            // Create and add the second vertical label
+            const verticalLabelSecond = document.createElement("div");
+            verticalLabelSecond.classList.add("vertical-table-label-base", "vertical-table-label-second");
+            verticalLabelSecond.textContent = "Defense";
+            table.appendChild(verticalLabelSecond);
+
+            // Create and add the third vertical label
+            const verticalLabelThird = document.createElement("div");
+            verticalLabelThird.classList.add("vertical-table-label-base", "vertical-table-label-third");
+            verticalLabelThird.textContent = "Goalies";
+            table.appendChild(verticalLabelThird);
+
+            // --- 2. Add Colgroup ---
+            const colgroup = document.createElement('colgroup');
+            colWidths.forEach(width => {
+                const col = document.createElement('col');
+                col.style.width = width;
+                colgroup.appendChild(col);
+            });
+            table.appendChild(colgroup);
+
+            // --- 3. Build Thead ---
+            const thead = document.createElement('thead');
+
+            // Header row (Column Titles)
+            const headerRow = document.createElement('tr');
+            const th1 = document.createElement('th');
+            th1.textContent = 'Pos';
+            const th2 = document.createElement('th');
+            th2.textContent = 'Player Name';
+            const th3 = document.createElement('th');
+            th3.textContent = 'Salary';
+            headerRow.appendChild(th1);
+            headerRow.appendChild(th2);
+            headerRow.appendChild(th3);
+            thead.appendChild(headerRow);
+
+            table.appendChild(thead); // Add the complete thead
+
+            // --- 4. Create Tbody ---
+            const tbody = document.createElement('tbody');
+            table.appendChild(tbody); // Add the empty tbody
+
+            // --- 5. Populate Tbody Rows ---
             const picksForThisTable = picksForState.filter(p => p.teamId === i);
-
-            // Generate rows for each required slot
             activePositions.forEach(pos => {
                 const countForPos = validPlayersPerPos[pos] || 0;
                 for (let j = 0; j < countForPos; j++) {
-                    // Find the j-th pick of this position for this table
                     const pickForThisSlot = picksForThisTable.filter(p => p.position === pos)[j];
-                    const row = createPlayerRow(pos, i, j === 0 ? countForPos : 0, j, pickForThisSlot);
-                    tbody.appendChild(row);
+                    // Create a player row for each slot
+                    const row = createPlayerRow(pos, i, j, pickForThisSlot);
+                    tbody.appendChild(row); // Append row to tbody
                 }
             });
 
-            // Add listener for table name editing
-            const headerCell = table.querySelector("thead .table-header td[contenteditable='true']");
-            if (headerCell) {
-                 headerCell.addEventListener('blur', handleTableNameEdit);
-                 headerCell.addEventListener('keydown', handleTableNameKeydown);
-            }
-
-            // Add Total Row
+            // --- 6. Add Total Row to Tbody ---
             const totalRow = document.createElement("tr");
             totalRow.classList.add("total-row");
-            totalRow.innerHTML = `<td colspan="2">Total</td><td class="total-salary-cell">$0</td>`;
-            tbody.appendChild(totalRow);
+            const totalLabelCell = document.createElement('td');
+            totalLabelCell.colSpan = colWidths.length - 1; // Span first N-1 columns
+            totalLabelCell.textContent = 'Total';
+            const totalSalaryCell = document.createElement('td');
+            totalSalaryCell.classList.add('total-salary-cell');
+            totalSalaryCell.textContent = '$0'; // Initial value
+            totalRow.appendChild(totalLabelCell);
+            totalRow.appendChild(totalSalaryCell);
+            tbody.appendChild(totalRow); // Append total row to tbody
 
+            // --- 7. Final Assembly ---
             tableWrapper.appendChild(table);
+
+            // Add padlock icon (initially hidden by CSS, shown when table-wrapper.active-table)
+            const padlockIcon = document.createElement('img');
+            padlockIcon.classList.add('padlock-icon');
+            padlockIcon.src = PNG_PADLOCK_UNLOCKED; // Initial state: Unlocked padlock
+            padlockIcon.dataset.locked = "false";
+            padlockIcon.alt = "Padlock status";
+            tableWrapper.appendChild(padlockIcon);
+            padlockIcon.addEventListener('click', handlePadlockClick);
+
             tablesContainer.appendChild(tableWrapper);
 
             // Calculate and display total salary for the newly created table
-            recalculateTotalSalary(table, maxSalary, picksForState); // Pass all picks
+            recalculateTotalSalary(table, maxSalary, picksForState);
         }
+        uniformizeColumnWidths();
     }
 
+
     /** Creates a single player row element (TR) for the draft table. */
-    function createPlayerRow(pos, teamId, posRowSpan, slotIndex, playerPick = null) {
+    function createPlayerRow(pos, teamId, slotIndex, playerPick = null) {
         const row = document.createElement("tr");
-        row.classList.add(pos, 'player-slot'); // Add position class and generic slot class
+        row.classList.add(pos, 'player-slot');
         row.dataset.position = pos;
         row.dataset.teamId = teamId;
-        row.dataset.slotIndex = slotIndex; // Index within the position group (0, 1, 2...)
+        row.dataset.slotIndex = slotIndex;
 
-        // --- Vertical Position Cell (if it's the first row for this position) ---
-        if (posRowSpan > 0) {
-            const positionMap = { F: "Forwards", D: "Defenders", G: "Goalies" };
-            const verticalCell = document.createElement("td");
-            verticalCell.rowSpan = posRowSpan;
-            verticalCell.classList.add("vertical-text", `vertical-${pos}`);
-            verticalCell.textContent = positionMap[pos] || pos;
-            row.appendChild(verticalCell);
-        }
+        // --- Position Cell (1st TD) ---
+        const positionCell = document.createElement("td");
+        // positionCell.classList.add("position-abbreviation-cell"); // For specific styling if needed
+        // positionCell.textContent = pos; // Display 'F', 'D', or 'G'
+        row.appendChild(positionCell);
 
-        // --- Player Name Cell ---
+        // --- Player Name Cell (Always the 2nd TD) ---
         const nameCell = document.createElement("td");
         nameCell.classList.add("player-name-cell");
-        nameCell.style.position = 'relative'; // Needed for absolute positioning of search results
+        nameCell.style.position = 'relative';
 
-        // --- Salary Cell ---
+        // --- Salary Cell (Always the 3rd TD) ---
         const salaryCell = document.createElement("td");
         salaryCell.classList.add("salary-cell");
 
-        // --- Populate based on whether the slot is filled ---
+        // --- Populate Name and Salary cells ---
         if (playerPick) {
-            // --- FILLED SLOT ---
+            // FILLED SLOT
             row.classList.add('filled-slot');
             salaryCell.textContent = formatCurrency(playerPick.salary);
 
             const logoPath = getTeamLogoPath(playerPick.team_url);
             const logoImg = document.createElement('img');
             logoImg.src = logoPath;
-            logoImg.alt = `${playerPick.city || 'Team'} Logo`; // Use city for better alt text
+            logoImg.alt = `${playerPick.city || 'Team'} Logo`;
             logoImg.classList.add('team-logo');
 
             const playerNameSpan = document.createElement('span');
@@ -433,29 +600,27 @@ document.addEventListener("DOMContentLoaded", () => {
             nameCell.appendChild(logoImg);
             nameCell.appendChild(playerNameSpan);
 
-            // Store player ID in a hidden input for potential future use (though not strictly necessary if state is always from server)
             const hiddenInput = document.createElement("input");
             hiddenInput.type = "hidden";
             hiddenInput.value = playerPick.playerName || '';
             hiddenInput.dataset.playerId = playerPick.playerId;
             nameCell.appendChild(hiddenInput);
-
         } else {
-            // --- EMPTY SLOT ---
+            // EMPTY SLOT
             row.classList.add('empty-slot');
-            salaryCell.textContent = formatCurrency(0); // Show $0 for empty slots
+            salaryCell.textContent = formatCurrency(0);
 
             const playerSearchInput = document.createElement("input");
             playerSearchInput.type = "text";
             playerSearchInput.classList.add("player-search-input");
             playerSearchInput.placeholder = "Search player...";
-            playerSearchInput.dataset.teamId = teamId; // Store context for event handlers
+            playerSearchInput.dataset.teamId = teamId;
             playerSearchInput.dataset.position = pos;
             playerSearchInput.dataset.slotIndex = slotIndex;
-            playerSearchInput.disabled = true; // Disable by default; enabled by enableInputsFromServerState
+            playerSearchInput.disabled = true;
             playerSearchInput.autocomplete = 'off';
             playerSearchInput.spellcheck = false;
-            playerSearchInput.dataset.playerId = ""; // Ensure no lingering ID
+            playerSearchInput.dataset.playerId = "";
 
             const searchResultsContainer = document.createElement("div");
             searchResultsContainer.classList.add("search-results-container");
@@ -463,12 +628,12 @@ document.addEventListener("DOMContentLoaded", () => {
             nameCell.appendChild(playerSearchInput);
             nameCell.appendChild(searchResultsContainer);
 
-            // Add input event listeners
             playerSearchInput.addEventListener("input", handlePlayerSearchInput);
             playerSearchInput.addEventListener('blur', handlePlayerSearchBlur);
             playerSearchInput.addEventListener('keydown', handlePlayerSearchKeydown);
         }
 
+        // Append Name and Salary cells
         row.appendChild(nameCell);
         row.appendChild(salaryCell);
 
@@ -604,6 +769,9 @@ document.addEventListener("DOMContentLoaded", () => {
         if (loadingIndicatorElement) loadingIndicatorElement.style.display = 'none';
         sessionStorage.removeItem('currentRoomCode');
         sessionStorage.removeItem('viewingDraft');
+
+        document.documentElement.style.removeProperty('--vertical-label-row-multiplier');
+        document.documentElement.style.removeProperty('--second-vertical-label-row-multiplier');
 
         // --- Reset Global State ---
         currentServerState = null;
@@ -835,11 +1003,28 @@ document.addEventListener("DOMContentLoaded", () => {
         const searchTerm = inputElement.value;
         const position = inputElement.dataset.position;
         const searchResultsContainer = inputElement.nextElementSibling;
+        const teamIdStr = inputElement.dataset.teamId;
 
         if (!searchResultsContainer) return;
 
         searchResultsContainer.innerHTML = ""; // Clear previous results
         searchResultsContainer.style.display = 'none'; // Hide initially
+
+        // --- Salary Cap Check Prep ---
+        let currentTeamId = -1;
+        if (teamIdStr) {
+            currentTeamId = parseInt(teamIdStr, 10);
+        }
+        const maxSalary = currentServerState?.settings?.maxSalary;
+        let currentTeamSalary = 0;
+
+        if (currentServerState?.picks && !isNaN(currentTeamId) && maxSalary > 0) {
+            currentServerState.picks.forEach(pick => {
+                if (pick.teamId === currentTeamId && pick.salary != null) {
+                    currentTeamSalary += (parseInt(pick.salary, 10) || 0);
+                }
+            });
+        }
 
         if (searchTerm.length < 2) { // Only search if term is long enough
             hidePlayerTooltip();
@@ -850,9 +1035,9 @@ document.addEventListener("DOMContentLoaded", () => {
         const selectedIds = currentServerState?.selectedPlayerIds instanceof Set
             ? currentServerState.selectedPlayerIds
             : new Set();
-
-        const availablePlayers = getAvailablePlayers(position, selectedIds);
-        const filteredPlayers = searchPlayers(searchTerm, availablePlayers); // Use imported search
+    
+        const playersOfGivenPosition = getAvailablePlayers(position); // Get all players of that position
+        const filteredPlayers = searchPlayers(searchTerm, playersOfGivenPosition); // Search within them
 
         if (filteredPlayers.length > 0) {
             searchResultsContainer.style.display = 'block'; // Show container
@@ -868,6 +1053,17 @@ document.addEventListener("DOMContentLoaded", () => {
                 item.dataset.city = player.city || '';
                 item.dataset.age = player.age ?? '';
 
+                const playerCapHit = parseInt(player.cap_hit, 10) || 0;
+                const wouldBeOverCap = maxSalary > 0 && (currentTeamSalary + playerCapHit > maxSalary) && !isNaN(currentTeamId);
+
+                const isPicked = selectedIds.has(player.id); // Check if this player is in the set of picked IDs
+                if (isPicked) {
+                    item.classList.add("search-result-item-picked"); // Add our new CSS class
+                } else if (wouldBeOverCap) {
+                    item.classList.add("search-result-item-over-cap");
+                    item.title = `Picking this player would exceed the ${formatCurrency(maxSalary)} salary cap for this team. Current: ${formatCurrency(currentTeamSalary)}, Player: ${formatCurrency(playerCapHit)}`;
+                }
+
                 const logoPath = getTeamLogoPath(player.team_url);
                 const logoImg = document.createElement('img');
                 logoImg.src = logoPath;
@@ -879,10 +1075,14 @@ document.addEventListener("DOMContentLoaded", () => {
                 nameSpan.textContent = player.name;
                 item.appendChild(nameSpan);
 
-                // Add listeners for interaction
-                item.addEventListener("mousedown", handlePlayerOptionMouseDown); // Mousedown fires before blur
+                // Tooltip listeners for all items
                 item.addEventListener("mouseenter", showPlayerTooltip);
                 item.addEventListener("mouseleave", hidePlayerTooltip);
+
+                // Selection listener only for unpicked items
+                if (!isPicked && !wouldBeOverCap) { // Only add listener if not picked AND not over cap
+                    item.addEventListener("mousedown", handlePlayerOptionMouseDown);
+                }
 
                 searchResultsContainer.appendChild(item);
             });
@@ -993,19 +1193,19 @@ document.addEventListener("DOMContentLoaded", () => {
              return;
         }
 
-        const headerCell = event.target;
-        const table = headerCell.closest('table');
+        const captionElement = event.target;
+        const table = captionElement.closest('table');
         if (!table) return;
 
         const teamId = parseInt(table.dataset.teamId, 10);
-        let newName = headerCell.textContent.trim(); // Get trimmed new name
+        let newName = captionElement.textContent.trim(); // Get trimmed new name
 
         if (!isNaN(teamId)) {
             const defaultName = `Team ${teamId + 1}`;
             // If name is empty after trimming, revert to default
             if (newName === "") {
                 newName = defaultName;
-                headerCell.textContent = newName; // Update display locally immediately
+                captionElement.textContent = newName; // Update display locally immediately
             }
 
             // Get the name currently known by the server state
@@ -1021,7 +1221,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
     /** Handles Enter key press within table name cell to trigger blur. */
     function handleTableNameKeydown(event) {
-        if (event.key === 'Enter') {
+        if (event.target.tagName === 'CAPTION' && event.key === 'Enter') {
             event.preventDefault(); // Prevent newline in contenteditable
             event.target.blur(); // Trigger the blur event handler
         }
@@ -1064,7 +1264,7 @@ document.addEventListener("DOMContentLoaded", () => {
             copyRoomCodeButton.textContent = 'Copied!';
             copyRoomCodeButton.disabled = true;
             setTimeout(() => {
-                copyRoomCodeButton.innerHTML = originalContent; // Restore original content (incl. SVG)
+                copyRoomCodeButton.innerHTML = originalContent;
                 copyRoomCodeButton.disabled = false;
             }, 1500); // Show feedback for 1.5 seconds
         }).catch(err => {
@@ -1124,6 +1324,33 @@ document.addEventListener("DOMContentLoaded", () => {
         exitConfirmOverlay?.classList.remove('visible'); // Just hide the modal
     }
 
+    /** Handles clicking on a table to highlight it. */
+    function handleTableClick(event) {
+        const clickedTableWrapper = event.target.closest('.table-wrapper');
+
+        if (!clickedTableWrapper || !tablesContainer) return; // Click was not inside a table wrapper or container doesn't exist
+
+        // Iterate over all table wrappers
+        tablesContainer.querySelectorAll('.table-wrapper').forEach(wrapper => {
+            if (wrapper !== clickedTableWrapper) {
+                // If this wrapper is not the one being clicked,
+                // remove 'active-table' and reset its padlock
+                if (wrapper.classList.contains('active-table')) {
+                    wrapper.classList.remove('active-table');
+                    const padlock = wrapper.querySelector('.padlock-icon');
+                    if (padlock) {
+                        padlock.src = PNG_PADLOCK_UNLOCKED; // Reset to unlocked
+                        padlock.dataset.locked = "false";
+                    }
+                }
+            }
+        });
+
+        // Activate the clicked table wrapper. Its padlock state is preserved.
+        clickedTableWrapper.classList.add('active-table');
+
+    }
+
     // ==========================================================================
     // Attaching Event Listeners
     // ==========================================================================
@@ -1160,6 +1387,31 @@ document.addEventListener("DOMContentLoaded", () => {
     attachListener(confirmExitButton, 'click', handleConfirmExit, 'Confirm Exit Button');
     attachListener(cancelExitButton, 'click', handleCancelExit, 'Cancel Exit Button');
 
+    // --- Table Click Listener for Highlighting ---
+    attachListener(tablesContainer, 'click', handleTableClick, 'Tables Container for Click Highlighting');
+
+    // --- Handles clicking the padlock icon on a table. ---
+    function handlePadlockClick(event) {
+        const padlock = event.currentTarget;
+        const isLocked = padlock.dataset.locked === "true";
+
+        if (!isLocked) { // If currently unlocked
+            padlock.src = PNG_PADLOCK_LOCKED; // Change to locked
+            padlock.dataset.locked = "true";
+        } else { // If currently locked
+            padlock.src = PNG_PADLOCK_UNLOCKED; // Change to unlocked
+            padlock.dataset.locked = "false";
+        }
+        event.stopPropagation(); // Prevent table click from firing if padlock is on top
+    }
+
     // Note: Listeners for dynamic elements (table names, search inputs/results) are added in createPlayerRow and generateTablesFromServerState
+
+    // --- Listener for window resize (with debounce) ---
+    let resizeTimeout;
+    window.addEventListener('resize', () => {
+        clearTimeout(resizeTimeout);
+        resizeTimeout = setTimeout(uniformizeColumnWidths, 150);
+    });
 
 }); // End DOMContentLoaded
